@@ -1,9 +1,9 @@
 // @req FR-AUTH-01, FR-AUTH-02, FR-AUTH-05, FR-DEV-01, FR-POS-01, FSD-01
 // Apple HIG iOS-Look Cashier PIN & Multi-Role Login Screen for Hiroshima POS
-// Responsive Phone + Tablet (iOS + Android) · Haptic Tactile Keypad · Device Activation
+// Responsive Phone + Tablet (iOS + Android) · Haptic Tactile Keypad · Username & PIN or Email & Password
 
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart' show Colors, ScaffoldMessenger, SnackBar, Theme;
+import 'package:flutter/material.dart' show Colors, Theme;
 import 'package:flutter/services.dart';
 import '../../../core/sync/pos_server_config_sheet.dart';
 import '../../../core/sync/pos_sync_service.dart';
@@ -13,7 +13,7 @@ import '../../../core/theme/ios_tokens.dart';
 import '../../../core/theme/theme_controller.dart';
 import '../../pos/presentation/pos_tablet_screen.dart';
 
-enum LoginMode { pin, email, activation }
+enum LoginMode { pin, email }
 
 class PosLoginScreen extends StatefulWidget {
   const PosLoginScreen({super.key});
@@ -34,10 +34,6 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
   final TextEditingController _passwordController = TextEditingController();
   bool _obscurePassword = true;
 
-  // Activation mode state
-  final TextEditingController _activationCodeController = TextEditingController();
-  final TextEditingController _deviceNameController = TextEditingController();
-
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -51,8 +47,6 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
     _usernameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
-    _activationCodeController.dispose();
-    _deviceNameController.dispose();
     super.dispose();
   }
 
@@ -168,47 +162,7 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
     }
   }
 
-  Future<void> _submitActivation() async {
-    final code = _activationCodeController.text.trim();
-    final name = _deviceNameController.text.trim();
 
-    if (code.isEmpty || name.isEmpty) {
-      setState(() => _errorMessage = 'Kode aktivasi dan nama perangkat wajib diisi.');
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
-    final res = await PosSyncService.instance.activateDevice(
-      activationCode: code,
-      deviceName: name,
-    );
-
-    if (!mounted) return;
-
-    setState(() => _isLoading = false);
-
-    if (res['success'] == true) {
-      HapticFeedback.mediumImpact();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(res['message'] as String? ?? 'Perangkat berhasil diaktivasi!'),
-          backgroundColor: const Color(0xFF16A34A),
-        ),
-      );
-      setState(() {
-        _selectedMode = LoginMode.pin;
-      });
-    } else {
-      HapticFeedback.heavyImpact();
-      setState(() {
-        _errorMessage = res['message'] as String? ?? 'Aktivasi gagal.';
-      });
-    }
-  }
 
 
 
@@ -304,29 +258,7 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
                   switch (_selectedMode) {
                     LoginMode.pin => _buildPinModeContent(),
                     LoginMode.email => _buildEmailModeContent(),
-                    LoginMode.activation => _buildActivationModeContent(),
                   },
-
-                  if (_selectedMode != LoginMode.activation) ...[
-                    const SizedBox(height: IOSSpacing.md),
-                    CupertinoButton(
-                      padding: EdgeInsets.zero,
-                      onPressed: () {
-                        HapticFeedback.selectionClick();
-                        setState(() {
-                          _selectedMode = LoginMode.activation;
-                          _errorMessage = null;
-                        });
-                      },
-                      child: Text(
-                        'Aktivasi Perangkat Tablet Baru',
-                        style: IOSText.caption1.copyWith(
-                          color: CupertinoColors.secondaryLabel.resolveFrom(context),
-                          decoration: TextDecoration.underline,
-                        ),
-                      ),
-                    ),
-                  ],
 
                   const SizedBox(height: IOSSpacing.xl),
                   _buildFooterInfo(),
@@ -429,32 +361,6 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
   }
 
   Widget _buildModeSegmentedControl() {
-    if (_selectedMode == LoginMode.activation) {
-      return CupertinoButton(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        onPressed: () {
-          setState(() {
-            _selectedMode = LoginMode.pin;
-            _errorMessage = null;
-          });
-        },
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(CupertinoIcons.chevron_back, size: 16, color: IOSColors.accent.resolveFrom(context)),
-            const SizedBox(width: 4),
-            Text(
-              'Kembali ke Form Login',
-              style: IOSText.subhead.copyWith(
-                color: IOSColors.accent.resolveFrom(context),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
     return SizedBox(
       width: double.infinity,
       child: CupertinoSlidingSegmentedControl<LoginMode>(
@@ -772,67 +678,7 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
     );
   }
 
-  // ───────────────────────── 3. MODE AKTIVASI TABLET ─────────────────────────
-  Widget _buildActivationModeContent() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: CupertinoColors.secondarySystemGroupedBackground.resolveFrom(context),
-        borderRadius: BorderRadius.circular(IOSRadius.card),
-        border: Border.all(
-          color: CupertinoColors.separator.resolveFrom(context).withValues(alpha: 0.5),
-          width: 0.5,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text('Kode Aktivasi (Dari Web Backoffice)', style: IOSText.caption1),
-          const SizedBox(height: 6),
-          CupertinoTextField(
-            controller: _activationCodeController,
-            placeholder: 'Contoh: ACT-9999',
-            textCapitalization: TextCapitalization.characters,
-            prefix: const Padding(
-              padding: EdgeInsets.only(left: 12),
-              child: Icon(CupertinoIcons.qrcode, size: 20, color: CupertinoColors.systemGrey),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-            decoration: BoxDecoration(
-              color: CupertinoColors.tertiarySystemFill.resolveFrom(context),
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-          const SizedBox(height: IOSSpacing.md),
 
-          Text('Nama / Posisi Tablet', style: IOSText.caption1),
-          const SizedBox(height: 6),
-          CupertinoTextField(
-            controller: _deviceNameController,
-            placeholder: 'Contoh: Tablet Kasir Utama / Tablet Bar',
-            prefix: const Padding(
-              padding: EdgeInsets.only(left: 12),
-              child: Icon(CupertinoIcons.device_phone_portrait, size: 20, color: CupertinoColors.systemGrey),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-            decoration: BoxDecoration(
-              color: CupertinoColors.tertiarySystemFill.resolveFrom(context),
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-          const SizedBox(height: IOSSpacing.lg),
-
-          IOSButton(
-            label: 'Aktivasi Perangkat Tablet',
-            variant: IOSButtonVariant.filled,
-            expanded: true,
-            isLoading: _isLoading,
-            onPressed: _isLoading ? null : _submitActivation,
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildFooterInfo() {
     final appName = PosSyncService.instance.appName;

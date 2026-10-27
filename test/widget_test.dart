@@ -35,7 +35,6 @@ void main() {
     expect(find.textContaining('HIROSHIMA'), findsWidgets);
     expect(find.text('Username & PIN'), findsOneWidget);
     expect(find.text('Email & Password'), findsOneWidget);
-    expect(find.text('Aktivasi Perangkat Tablet Baru'), findsOneWidget);
 
     // Verify username input field is present and empty (no hardcoded values)
     expect(find.text('Username Kasir'), findsOneWidget);
