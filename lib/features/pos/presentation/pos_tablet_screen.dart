@@ -3,7 +3,7 @@
 // Responsive Phone + Tablet (iOS + Android) · 100% Dynamic Backend Data · Panda POS Bluetooth Thermal Print
 
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart' show Colors, ScaffoldMessenger, SnackBar, Theme;
+import 'package:flutter/material.dart' show Colors, ScaffoldMessenger, SnackBar, SnackBarBehavior, Theme;
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../../../core/pricing/order_calculator.dart';
@@ -18,6 +18,7 @@ import '../../../core/theme/pos_product_image.dart';
 import '../../../core/theme/theme_controller.dart';
 import 'pos_modifier_dialog.dart';
 import 'pos_payment_sheet.dart';
+import 'pos_receipt_dialog.dart';
 import 'pos_shift_sheet.dart';
 import '../../auth/presentation/pos_login_screen.dart';
 
@@ -1352,6 +1353,20 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
           CupertinoActionSheetAction(
             onPressed: () {
               Navigator.pop(ctx);
+              _showRecentOrdersDialog(context);
+            },
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(CupertinoIcons.doc_text_search, size: 20, color: IOSColors.accent.resolveFrom(context)),
+                const SizedBox(width: 8),
+                Text('Riwayat & Void Transaksi', style: TextStyle(fontWeight: FontWeight.w600, color: IOSColors.accent.resolveFrom(context))),
+              ],
+            ),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(ctx);
               PosPrinterSheet.show(context);
             },
             child: const Row(
@@ -1615,6 +1630,15 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                 color: printerService.isConnected ? IOSColors.accent.resolveFrom(context) : CupertinoColors.systemGrey,
                 badge: printerService.isConnected ? 'OK' : null,
                 onPressed: () => PosPrinterSheet.show(context),
+              ),
+              const SizedBox(width: 6),
+
+              // Riwayat & Void Transaksi Button
+              IOSIconButton(
+                icon: CupertinoIcons.doc_text_search,
+                semanticLabel: 'Riwayat Transaksi & Void (FSD-08)',
+                color: IOSColors.label.resolveFrom(context),
+                onPressed: () => _showRecentOrdersDialog(context),
               ),
               const SizedBox(width: 6),
 
@@ -2791,6 +2815,428 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
             onPressed: openCartModal,
           ),
         ],
+      ),
+    );
+  }
+
+  void _showRecentOrdersDialog(BuildContext context) {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (modalCtx) => _RecentOrdersModal(
+        onOpenReceipt: (order) {
+          Navigator.pop(modalCtx);
+          _openReceiptForOrder(order);
+        },
+      ),
+    );
+  }
+
+  void _openReceiptForOrder(Map<String, dynamic> order) {
+    final branch = PosSyncService.instance.branch;
+    final branchName = (branch['name'] as String?) ?? PosSyncService.instance.appName;
+    final branchAddress = (branch['address'] as String?) ?? '';
+    final branchPhone = (branch['phone'] as String?) ?? '';
+    final orderNo = (order['order_no'] as String?) ?? 'ORD-POS';
+    final isVoid = order['status'] == 'voided';
+    final voidReason = order['void_reason'] as String?;
+
+    // Parse items
+    final rawItems = (order['items'] as List<dynamic>?) ?? [];
+    final items = rawItems.map((e) {
+      final mods = ((e['modifiers'] as List<dynamic>?) ?? []).map((m) => {
+        'id': m['modifier_id'] ?? m['id'],
+        'name': m['modifier_name'] ?? m['name'] ?? 'Modifier',
+        'price': (m['unit_price'] as num?)?.toInt() ?? 0,
+      }).toList();
+
+      return {
+        'id': e['product_id'] ?? e['id'],
+        'name': e['product_name'] ?? e['name'] ?? 'Menu',
+        'price': (e['unit_price'] as num?)?.toInt() ?? 0,
+        'qty': (e['quantity'] as num?)?.toInt() ?? (e['qty'] as num?)?.toInt() ?? 1,
+        'modifiers': mods,
+        'notes': e['notes'],
+      };
+    }).toList();
+
+    // Parse payments
+    final rawPayments = (order['payments'] as List<dynamic>?) ?? [];
+    final firstPayment = rawPayments.isNotEmpty ? rawPayments.first : {};
+    final paymentMethodName = firstPayment['payment_method_name_snapshot'] 
+        ?? firstPayment['payment_method']?['name'] 
+        ?? firstPayment['method'] 
+        ?? 'Tunai (Cash)';
+
+    final subtotal = (order['subtotal'] as num?)?.toInt() ?? 0;
+    final totalDiscount = ((order['promo_discount_amount'] ?? 0) as num).toInt() +
+        ((order['voucher_discount_amount'] ?? 0) as num).toInt() +
+        ((order['loyalty_discount_amount'] ?? 0) as num).toInt() +
+        ((order['manual_discount_amount'] ?? 0) as num).toInt();
+    final serviceCharge = ((order['service_charge_amount'] ?? 0) as num).toInt();
+    final taxAmount = ((order['tax_amount'] ?? 0) as num).toInt();
+    final roundingAmount = ((order['rounding_amount'] ?? 0) as num).toInt();
+    final totalAmount = (order['total_amount'] as num?)?.toInt() ?? 0;
+    final paidAmount = (order['paid_amount'] as num?)?.toInt() ?? totalAmount;
+    final changeAmount = (order['change_amount'] as num?)?.toInt() ?? 0;
+    final cashierName = order['user']?['name'] ?? order['user']?['username'] ?? 'Kasir';
+    final orderTypeName = order['order_type']?['name'] ?? 'Dine In';
+    final tableNo = order['table']?['table_no']?.toString();
+    final transactionTime = order['client_created_at'] != null 
+        ? DateTime.tryParse(order['client_created_at']) ?? DateTime.now()
+        : DateTime.now();
+
+    showCupertinoDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => PosReceiptDialog(
+        branchName: branchName,
+        branchAddress: branchAddress,
+        branchPhone: branchPhone,
+        orderNo: orderNo,
+        tableNo: tableNo,
+        orderTypeName: orderTypeName,
+        cashierName: cashierName,
+        transactionTime: transactionTime,
+        items: items,
+        subtotal: subtotal,
+        totalDiscount: totalDiscount,
+        serviceChargeAmount: serviceCharge,
+        taxAmount: taxAmount,
+        roundingAmount: roundingAmount,
+        totalAmount: totalAmount,
+        paymentMethodName: paymentMethodName,
+        paidAmount: paidAmount,
+        changeAmount: changeAmount,
+        orderId: order['id'] ?? orderNo,
+        isVoided: isVoid,
+        voidReason: voidReason,
+        onVoid: isVoid ? null : (pin, reason) async {
+          final res = await PosSyncService.instance.voidOrder(order['id'] ?? orderNo, pin, reason);
+          if (res['success'] == true) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Transaksi $orderNo berhasil dibatalkan (Void). Dana dicatat sebagai Refund.'),
+                  backgroundColor: IOSColors.destructive.resolveFrom(context),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            }
+            return true;
+          }
+          return false;
+        },
+        onReprint: () async {
+          await ThermalPrinterService.instance.printOrderDualCopy(
+            branchName: branchName,
+            branchAddress: branchAddress,
+            branchPhone: branchPhone,
+            orderNo: orderNo,
+            tableNo: tableNo,
+            orderTypeName: orderTypeName,
+            cashierName: cashierName,
+            transactionTime: transactionTime,
+            items: items,
+            subtotal: subtotal,
+            totalDiscount: totalDiscount,
+            serviceChargeAmount: serviceCharge,
+            taxAmount: taxAmount,
+            roundingAmount: roundingAmount,
+            totalAmount: totalAmount,
+            payments: [
+              {
+                'method': paymentMethodName,
+                'amount': paidAmount,
+              }
+            ],
+            changeAmount: changeAmount,
+            openDrawer: false,
+          );
+        },
+        onClose: () => Navigator.pop(ctx),
+      ),
+    );
+  }
+}
+
+class _RecentOrdersModal extends StatefulWidget {
+  final ValueChanged<Map<String, dynamic>> onOpenReceipt;
+
+  const _RecentOrdersModal({required this.onOpenReceipt});
+
+  @override
+  State<_RecentOrdersModal> createState() => _RecentOrdersModalState();
+}
+
+class _RecentOrdersModalState extends State<_RecentOrdersModal> {
+  final _currency = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
+  final TextEditingController _searchCtrl = TextEditingController();
+  List<Map<String, dynamic>> _orders = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOrders();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadOrders() async {
+    setState(() => _isLoading = true);
+    final data = await PosSyncService.instance.fetchRecentOrders();
+    if (mounted) {
+      setState(() {
+        _orders = data;
+        _isLoading = false;
+      });
+    }
+  }
+
+  List<Map<String, dynamic>> get _filteredOrders {
+    final q = _searchCtrl.text.trim().toLowerCase();
+    if (q.isEmpty) return _orders;
+    return _orders.where((o) {
+      final orderNo = (o['order_no'] as String? ?? '').toLowerCase();
+      final table = (o['table']?['table_no']?.toString() ?? '').toLowerCase();
+      final cust = (o['customer_id']?.toString() ?? '').toLowerCase();
+      return orderNo.contains(q) || table.contains(q) || cust.contains(q);
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = CupertinoTheme.of(context).brightness == Brightness.dark;
+
+    return Center(
+      child: Container(
+        width: 620,
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.88,
+        ),
+        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        decoration: BoxDecoration(
+          color: IOSColors.groupedBackground.resolveFrom(context),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(
+            color: IOSColors.separator.resolveFrom(context).withValues(alpha: 0.6),
+            width: 0.8,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isDark ? 0.6 : 0.2),
+              blurRadius: 30,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(22),
+          child: Column(
+            children: [
+              // Header
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                color: IOSColors.secondaryGroupedBackground.resolveFrom(context),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: IOSColors.accent.resolveFrom(context).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(CupertinoIcons.doc_text_search, size: 20, color: IOSColors.accent.resolveFrom(context)),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Riwayat Transaksi & Void (FSD-08)', style: IOSText.headline),
+                          const SizedBox(height: 1),
+                          Text('Ketuk transaksi untuk Cetak Ulang atau Void Transaksi', style: IOSText.caption1),
+                        ],
+                      ),
+                    ),
+                    CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      onPressed: _loadOrders,
+                      child: Icon(CupertinoIcons.arrow_clockwise, size: 18, color: IOSColors.accent.resolveFrom(context)),
+                    ),
+                    const SizedBox(width: 8),
+                    CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      onPressed: () => Navigator.pop(context),
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: IOSColors.tertiarySystemFill.resolveFrom(context),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(CupertinoIcons.xmark, size: 14, color: IOSColors.secondaryLabel.resolveFrom(context)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Search Bar
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                child: CupertinoSearchTextField(
+                  controller: _searchCtrl,
+                  placeholder: 'Cari nomor struk / meja...',
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+
+              // Content
+              Expanded(
+                child: _isLoading
+                    ? const Center(child: CupertinoActivityIndicator(radius: 14))
+                    : _filteredOrders.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(CupertinoIcons.tray, size: 48, color: IOSColors.tertiaryLabel.resolveFrom(context)),
+                                const SizedBox(height: 8),
+                                Text('Tidak ada transaksi ditemukan', style: IOSText.subhead),
+                              ],
+                            ),
+                          )
+                        : ListView.separated(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: _filteredOrders.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 10),
+                            itemBuilder: (context, i) {
+                              final o = _filteredOrders[i];
+                              final isVoid = o['status'] == 'voided';
+                              final orderNo = o['order_no'] as String? ?? 'HRS-POS';
+                              final total = (o['total_amount'] as num?)?.toInt() ?? 0;
+                              final typeName = o['order_type']?['name'] as String? ?? 'Dine In';
+                              final timeStr = o['client_created_at'] != null
+                                  ? DateFormat('dd/MM HH:mm').format(DateTime.tryParse(o['client_created_at']) ?? DateTime.now())
+                                  : '-';
+                              final itemsCount = (o['items'] as List?)?.length ?? 0;
+
+                              return CupertinoButton(
+                                padding: EdgeInsets.zero,
+                                onPressed: () => widget.onOpenReceipt(o),
+                                child: Container(
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color: IOSColors.secondaryGroupedBackground.resolveFrom(context),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: isVoid
+                                          ? CupertinoColors.destructiveRed.withValues(alpha: 0.3)
+                                          : IOSColors.separator.resolveFrom(context).withValues(alpha: 0.4),
+                                      width: isVoid ? 1.2 : 0.8,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(10),
+                                        decoration: BoxDecoration(
+                                          color: isVoid
+                                              ? CupertinoColors.destructiveRed.withValues(alpha: 0.1)
+                                              : IOSColors.success.resolveFrom(context).withValues(alpha: 0.1),
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
+                                        child: Icon(
+                                          isVoid ? CupertinoIcons.xmark_shield_fill : CupertinoIcons.checkmark_seal_fill,
+                                          color: isVoid ? CupertinoColors.destructiveRed : IOSColors.success.resolveFrom(context),
+                                          size: 20,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Text(orderNo, style: IOSText.headline.copyWith(fontSize: 14)),
+                                                const SizedBox(width: 8),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: IOSColors.tertiarySystemFill.resolveFrom(context),
+                                                    borderRadius: BorderRadius.circular(6),
+                                                  ),
+                                                  child: Text(typeName, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600)),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 3),
+                                            Text(
+                                              '$timeStr • $itemsCount menu',
+                                              style: TextStyle(fontSize: 11, color: IOSColors.secondaryLabel.resolveFrom(context)),
+                                            ),
+                                            if (isVoid && o['void_reason'] != null)
+                                              Padding(
+                                                padding: const EdgeInsets.only(top: 3),
+                                                child: Text(
+                                                  'Alasan Void: ${o['void_reason']}',
+                                                  style: const TextStyle(fontSize: 10.5, fontStyle: FontStyle.italic, color: CupertinoColors.destructiveRed),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.end,
+                                        children: [
+                                          Text(
+                                            _currency.format(total),
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.bold,
+                                              color: isVoid ? IOSColors.secondaryLabel.resolveFrom(context) : IOSColors.accent.resolveFrom(context),
+                                              decoration: isVoid ? TextDecoration.lineThrough : null,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                            decoration: BoxDecoration(
+                                              color: isVoid
+                                                  ? CupertinoColors.destructiveRed.withValues(alpha: 0.15)
+                                                  : IOSColors.success.resolveFrom(context).withValues(alpha: 0.15),
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: Text(
+                                              isVoid ? 'VOID' : 'SELESAI',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w800,
+                                                color: isVoid ? CupertinoColors.destructiveRed : IOSColors.success.resolveFrom(context),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(width: 4),
+                                      const Icon(CupertinoIcons.chevron_forward, size: 14, color: CupertinoColors.systemGrey3),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -741,9 +741,9 @@ class PosSyncService extends ChangeNotifier {
   }
 
   /// Void a completed transaction (requires 6-digit Supervisor PIN Void and reason)
-  Future<Map<String, dynamic>> voidOrder(int orderId, String pinVoid, String reason) async {
+  Future<Map<String, dynamic>> voidOrder(dynamic orderIdOrNo, String pinVoid, String reason) async {
     try {
-      final uri = Uri.parse('$baseUrl/orders/$orderId/void');
+      final uri = Uri.parse('$baseUrl/orders/$orderIdOrNo/void');
       final response = await http.post(
         uri,
         headers: {
@@ -767,6 +767,35 @@ class PosSyncService extends ChangeNotifier {
     } catch (e) {
       return {'success': false, 'message': 'Gagal menghubungi server: $e'};
     }
+  }
+
+  /// Fetch recent completed & voided orders for active shift / branch
+  Future<List<Map<String, dynamic>>> fetchRecentOrders() async {
+    try {
+      final targetBranchId = _branch['id'] ?? currentUser?['branch_id'];
+      String url = '$baseUrl/orders/recent';
+      if (targetBranchId != null) {
+        url += '?branch_id=$targetBranchId';
+      }
+      final uri = Uri.parse(url);
+      final headers = <String, String>{
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $authToken',
+      };
+      if (targetBranchId != null) {
+        headers['X-Branch-Id'] = targetBranchId.toString();
+      }
+
+      final response = await http.get(uri, headers: headers).timeout(const Duration(seconds: 6));
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200 && body['success'] == true) {
+        final list = (body['orders'] as List<dynamic>?) ?? [];
+        return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+    } catch (e) {
+      debugPrint('[PosSyncService] Error fetching recent orders: $e');
+    }
+    return [];
   }
 
   Future<void> _loadSavedBaseUrl() async {

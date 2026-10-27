@@ -2,7 +2,7 @@
 // Apple HIG Payment & Bluetooth Thermal Printing Sheet for Hiroshima POS
 
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart' show Colors, Theme;
+import 'package:flutter/material.dart' show Colors, ScaffoldMessenger, SnackBar, SnackBarBehavior, Theme;
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
@@ -253,6 +253,23 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
         paidAmount: _isCash ? _cashGiven : calc.totalAmount,
         changeAmount: _changeAmount > 0 ? _changeAmount : 0,
         printNotice: printNotice.isNotEmpty ? printNotice : null,
+        orderId: orderNo,
+        onVoid: (pin, reason) async {
+          final res = await PosSyncService.instance.voidOrder(orderNo, pin, reason);
+          if (res['success'] == true) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Transaksi $orderNo berhasil dibatalkan (Void). Dana dicatat sebagai Refund.'),
+                  backgroundColor: IOSColors.destructive.resolveFrom(context),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            }
+            return true;
+          }
+          return false;
+        },
         onReprint: () async {
           await ThermalPrinterService.instance.printOrderDualCopy(
             branchName: branchName,

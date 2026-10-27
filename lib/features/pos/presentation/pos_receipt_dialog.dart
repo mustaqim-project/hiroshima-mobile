@@ -30,6 +30,10 @@ class PosReceiptDialog extends StatelessWidget {
   final String? printNotice;
   final VoidCallback onReprint;
   final VoidCallback onClose;
+  final dynamic orderId;
+  final bool isVoided;
+  final String? voidReason;
+  final Future<bool> Function(String pin, String reason)? onVoid;
 
   const PosReceiptDialog({
     super.key,
@@ -54,6 +58,10 @@ class PosReceiptDialog extends StatelessWidget {
     this.printNotice,
     required this.onReprint,
     required this.onClose,
+    this.orderId,
+    this.isVoided = false,
+    this.voidReason,
+    this.onVoid,
   });
 
   static final _currency = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
@@ -90,33 +98,51 @@ class PosReceiptDialog extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Header Success Pill
+              // Header Success / Void Pill
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-                color: IOSColors.success.resolveFrom(context).withValues(alpha: 0.15),
+                color: isVoided
+                    ? CupertinoColors.destructiveRed.withValues(alpha: 0.15)
+                    : IOSColors.success.resolveFrom(context).withValues(alpha: 0.15),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
-                      CupertinoIcons.checkmark_seal_fill,
-                      color: IOSColors.success.resolveFrom(context),
+                      isVoided ? CupertinoIcons.xmark_shield_fill : CupertinoIcons.checkmark_seal_fill,
+                      color: isVoided ? CupertinoColors.destructiveRed : IOSColors.success.resolveFrom(context),
                       size: 16,
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      'TRANSAKSI BERHASIL / STRUK PEMBAYARAN',
+                      isVoided ? 'TRANSAKSI DIBATALKAN (VOID)' : 'TRANSAKSI BERHASIL / STRUK PEMBAYARAN',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 0.5,
-                        color: IOSColors.success.resolveFrom(context),
+                        color: isVoided ? CupertinoColors.destructiveRed : IOSColors.success.resolveFrom(context),
                         decoration: TextDecoration.none,
                       ),
                     ),
                   ],
                 ),
               ),
+              if (isVoided && voidReason != null && voidReason!.isNotEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+                  color: CupertinoColors.destructiveRed.withValues(alpha: 0.08),
+                  child: Text(
+                    'Alasan Void: $voidReason',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontStyle: FontStyle.italic,
+                      color: CupertinoColors.destructiveRed,
+                      decoration: TextDecoration.none,
+                    ),
+                  ),
+                ),
 
               // Scrollable Receipt Body
               Flexible(
@@ -430,30 +456,146 @@ class PosReceiptDialog extends StatelessWidget {
                     ),
                   ),
                 ),
-                child: Row(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Expanded(
-                      child: IOSButton(
-                        label: 'Cetak Lagi',
-                        icon: CupertinoIcons.printer_fill,
-                        variant: IOSButtonVariant.tinted,
-                        onPressed: onReprint,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: IOSButton(
+                            label: 'Cetak Lagi',
+                            icon: CupertinoIcons.printer_fill,
+                            variant: IOSButtonVariant.tinted,
+                            onPressed: onReprint,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: IOSButton(
+                            label: 'Selesai',
+                            icon: CupertinoIcons.checkmark,
+                            variant: IOSButtonVariant.filled,
+                            onPressed: onClose,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: IOSButton(
-                        label: 'Selesai',
-                        icon: CupertinoIcons.checkmark,
-                        variant: IOSButtonVariant.filled,
-                        onPressed: onClose,
+                    if (!isVoided && onVoid != null) ...[
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: CupertinoButton(
+                          padding: const EdgeInsets.symmetric(vertical: 9),
+                          color: CupertinoColors.destructiveRed.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                          onPressed: () => _handlePromptVoid(context),
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(CupertinoIcons.xmark_circle_fill, size: 16, color: CupertinoColors.destructiveRed),
+                              SizedBox(width: 6),
+                              Text(
+                                'Batalkan / Void Transaksi Ini',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: CupertinoColors.destructiveRed,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  void _handlePromptVoid(BuildContext context) {
+    final pinController = TextEditingController();
+    final reasonController = TextEditingController();
+    String? errorMessage;
+
+    showCupertinoDialog(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => CupertinoAlertDialog(
+          title: const Text('Otorisasi Void Transaksi (FSD-08)'),
+          content: Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Masukkan 6-digit PIN Supervisor dan alasan pembatalan transaksi ini. Pembayaran akan dicatat sebagai Refund.',
+                  style: TextStyle(fontSize: 12),
+                ),
+                const SizedBox(height: 12),
+                CupertinoTextField(
+                  controller: pinController,
+                  placeholder: 'PIN Void (Default: 123456)',
+                  obscureText: true,
+                  keyboardType: TextInputType.number,
+                  maxLength: 6,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(letterSpacing: 6, fontWeight: FontWeight.bold, fontSize: 15),
+                ),
+                const SizedBox(height: 8),
+                CupertinoTextField(
+                  controller: reasonController,
+                  placeholder: 'Alasan Void (min. 3 huruf)',
+                  maxLines: 2,
+                  style: const TextStyle(fontSize: 12),
+                ),
+                if (errorMessage != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    errorMessage!,
+                    style: const TextStyle(color: CupertinoColors.destructiveRed, fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            CupertinoDialogAction(
+              isDestructiveAction: true,
+              onPressed: () async {
+                final pin = pinController.text.trim();
+                final reason = reasonController.text.trim();
+                if (pin.length != 6) {
+                  setDialogState(() => errorMessage = 'PIN Supervisor wajib 6 digit.');
+                  return;
+                }
+                if (reason.length < 3) {
+                  setDialogState(() => errorMessage = 'Alasan pembatalan minimal 3 karakter.');
+                  return;
+                }
+
+                if (onVoid != null) {
+                  final ok = await onVoid!(pin, reason);
+                  if (ok) {
+                    Navigator.pop(dialogCtx);
+                    onClose();
+                  } else {
+                    setDialogState(() => errorMessage = 'PIN salah atau gagal membatalkan transaksi.');
+                  }
+                }
+              },
+              child: const Text('Konfirmasi Void'),
+            ),
+            CupertinoDialogAction(
+              isDefaultAction: true,
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: const Text('Batal'),
+            ),
+          ],
         ),
       ),
     );
