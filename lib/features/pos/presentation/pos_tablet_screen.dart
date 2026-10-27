@@ -345,71 +345,280 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
   }
 
   void _openDiscountDialog({StateSetter? modalSetState}) {
-    final textController = TextEditingController();
+    final subtotal = _cartSubtotal;
+    int discountMode = 0; // 0 = Nominal (Rp), 1 = Persentase (%)
+    final textController = TextEditingController(
+      text: _manualDiscount > 0 ? _manualDiscount.toString() : '',
+    );
+
     showCupertinoDialog(
       context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('Input Diskon Manual'),
-        content: Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Diskon di atas 10% atau Rp 20.000 wajib otorisasi PIN Diskon Kepala Cabang.',
-                style: TextStyle(fontSize: 12, color: CupertinoColors.systemGrey),
+      builder: (ctx) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) {
+          final isDark = CupertinoTheme.of(dialogCtx).brightness == Brightness.dark;
+
+          // Compute live preview
+          int previewDiscount = 0;
+          double previewPercent = 0.0;
+          final rawText = textController.text.trim();
+
+          if (discountMode == 0) {
+            // Nominal
+            previewDiscount = int.tryParse(rawText.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+            if (previewDiscount > subtotal) previewDiscount = subtotal;
+            previewPercent = subtotal > 0 ? (previewDiscount / subtotal) * 100 : 0.0;
+          } else {
+            // Persentase
+            final pct = double.tryParse(rawText.replaceAll(',', '.')) ?? 0.0;
+            final clampedPct = pct.clamp(0.0, 100.0);
+            previewPercent = clampedPct;
+            previewDiscount = ((subtotal * clampedPct) / 100).round();
+            if (previewDiscount > subtotal) previewDiscount = subtotal;
+          }
+
+          final bool isOverThreshold = previewPercent > 10.0 || previewDiscount > 20000;
+
+          return CupertinoAlertDialog(
+            title: const Text('Input Diskon Manual'),
+            content: Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Segmented control: Nominal vs Persentase
+                  CupertinoSlidingSegmentedControl<int>(
+                    groupValue: discountMode,
+                    children: const {
+                      0: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        child: Text(
+                          'Nominal (Rp)',
+                          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      1: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        child: Text(
+                          'Persentase (%)',
+                          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    },
+                    onValueChanged: (val) {
+                      if (val != null) {
+                        setDialogState(() {
+                          discountMode = val;
+                          textController.clear();
+                        });
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Subtotal indicator
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF2C2C2E) : const Color(0xFFF2F2F7),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Subtotal Pesanan:',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: CupertinoColors.systemGrey,
+                          ),
+                        ),
+                        Text(
+                          _currency.format(subtotal),
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: CupertinoColors.label.resolveFrom(dialogCtx),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Input field
+                  CupertinoTextField(
+                    controller: textController,
+                    keyboardType: discountMode == 0
+                        ? TextInputType.number
+                        : const TextInputType.numberWithOptions(decimal: true),
+                    placeholder: discountMode == 0 ? 'Contoh: 15000' : 'Contoh: 10 atau 15.5',
+                    prefix: discountMode == 0
+                        ? Padding(
+                            padding: const EdgeInsets.only(left: 10),
+                            child: Text(
+                              'Rp ',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: CupertinoColors.systemGrey.resolveFrom(dialogCtx),
+                                fontSize: 14,
+                              ),
+                            ),
+                          )
+                        : null,
+                    suffix: discountMode == 1
+                        ? Padding(
+                            padding: const EdgeInsets.only(right: 10),
+                            child: Text(
+                              ' %',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: CupertinoColors.systemGrey.resolveFrom(dialogCtx),
+                                fontSize: 14,
+                              ),
+                            ),
+                          )
+                        : null,
+                    placeholderStyle: TextStyle(
+                      color: CupertinoColors.placeholderText.resolveFrom(context),
+                      fontSize: 13.5,
+                    ),
+                    style: TextStyle(
+                      color: CupertinoColors.label.resolveFrom(context),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                    onChanged: (_) => setDialogState(() {}),
+                  ),
+
+                  // Live Preview Calculation
+                  if (rawText.isNotEmpty && previewDiscount > 0) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1E3A2F) : const Color(0xFFE8F5E9),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Potongan Diskon:',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: Color(0xFF2E7D32),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            '- ${_currency.format(previewDiscount)} (${previewPercent.toStringAsFixed(previewPercent.truncateToDouble() == previewPercent ? 0 : 1)}%)',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF1B5E20),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  // Threshold notice
+                  const SizedBox(height: 8),
+                  if (isOverThreshold && previewDiscount > 0)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF3E2D12) : const Color(0xFFFEF3C7),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            CupertinoIcons.exclamationmark_triangle_fill,
+                            size: 13,
+                            color: isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Diskon > 10% atau > Rp 20.000 wajib PIN Supervisor.',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    const Text(
+                      'Diskon di atas 10% atau Rp 20.000 wajib otorisasi PIN Diskon Kepala Cabang.',
+                      style: TextStyle(fontSize: 11, color: CupertinoColors.systemGrey),
+                      textAlign: TextAlign.center,
+                    ),
+                ],
               ),
-              const SizedBox(height: 12),
-              CupertinoTextField(
-                controller: textController,
-                keyboardType: TextInputType.number,
-                placeholder: 'Nominal Potongan (Rp)',
-                placeholderStyle: TextStyle(
-                  color: CupertinoColors.placeholderText.resolveFrom(context),
-                  fontSize: 14,
+            ),
+            actions: [
+              if (_manualDiscount > 0)
+                CupertinoDialogAction(
+                  isDestructiveAction: true,
+                  child: const Text('Hapus Diskon'),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    setState(() => _manualDiscount = 0);
+                    if (modalSetState != null) modalSetState(() {});
+                  },
                 ),
-                style: TextStyle(
-                  color: CupertinoColors.label.resolveFrom(context),
-                  fontSize: 15,
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              CupertinoDialogAction(
+                child: const Text('Batal'),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+              CupertinoDialogAction(
+                isDefaultAction: true,
+                child: const Text('Terapkan'),
+                onPressed: () {
+                  final finalDiscount = previewDiscount;
+                  final finalPercent = previewPercent;
+                  Navigator.pop(ctx);
+
+                  if (finalDiscount <= 0) {
+                    setState(() => _manualDiscount = 0);
+                    if (modalSetState != null) modalSetState(() {});
+                    return;
+                  }
+
+                  if (finalPercent > 10.0 || finalDiscount > 20000) {
+                    final reasonStr = discountMode == 1
+                        ? 'Diskon ${finalPercent.toStringAsFixed(1)}% (${_currency.format(finalDiscount)})'
+                        : 'Diskon ${_currency.format(finalDiscount)} (${finalPercent.toStringAsFixed(1)}%)';
+
+                    _promptSupervisorPin(
+                      reason: reasonStr,
+                      onAuthorized: () {
+                        setState(() => _manualDiscount = finalDiscount);
+                        if (modalSetState != null) modalSetState(() {});
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Diskon ${_currency.format(finalDiscount)} berhasil diotorisasi PIN.'),
+                          ),
+                        );
+                      },
+                    );
+                  } else {
+                    setState(() => _manualDiscount = finalDiscount);
+                    if (modalSetState != null) modalSetState(() {});
+                  }
+                },
               ),
             ],
-          ),
-        ),
-        actions: [
-          CupertinoDialogAction(
-            child: const Text('Batal'),
-            onPressed: () => Navigator.pop(ctx),
-          ),
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            child: const Text('Terapkan'),
-            onPressed: () {
-              final discount = int.tryParse(textController.text) ?? 0;
-              Navigator.pop(ctx);
-
-              final subtotal = _cartSubtotal;
-              final percent = subtotal > 0 ? (discount / subtotal) * 100 : 0;
-
-              if (percent > 10.0 || discount > 20000) {
-                _promptSupervisorPin(
-                  reason: 'Diskon melebihi ambang batas (${_currency.format(discount)})',
-                  onAuthorized: () {
-                    setState(() => _manualDiscount = discount);
-                    if (modalSetState != null) modalSetState(() {});
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Diskon ${_currency.format(discount)} berhasil diotorisasi PIN.')),
-                    );
-                  },
-                );
-              } else {
-                setState(() => _manualDiscount = discount);
-                if (modalSetState != null) modalSetState(() {});
-              }
-            },
-          ),
-        ],
+          );
+        },
       ),
     );
   }
