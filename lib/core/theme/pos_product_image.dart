@@ -15,7 +15,7 @@ class PosProductImage extends StatelessWidget {
     required this.imagePath,
     this.width,
     this.height,
-    this.fit = BoxFit.cover,
+    this.fit = BoxFit.contain,
     this.borderRadius,
     this.category,
   });
@@ -24,7 +24,7 @@ class PosProductImage extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final resolvedUrl = PosSyncService.instance.resolveImageUrl(imagePath);
-    final radius = borderRadius ?? const BorderRadius.vertical(top: Radius.circular(14));
+    final radius = borderRadius ?? const BorderRadius.vertical(top: Radius.circular(16));
 
     Widget imageContent;
 
@@ -34,6 +34,7 @@ class PosProductImage extends StatelessWidget {
         width: width,
         height: height,
         fit: fit,
+        alignment: Alignment.center,
         loadingBuilder: (context, child, loadingProgress) {
           if (loadingProgress == null) return child;
           return Container(

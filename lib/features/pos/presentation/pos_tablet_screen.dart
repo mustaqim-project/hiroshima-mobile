@@ -1495,6 +1495,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
   Widget _buildProductCard(Map<String, dynamic> product) {
     final name = product['name'] as String;
     final category = product['category'] as String;
+    final sku = (product['sku'] as String?)?.trim();
     final price = _getPriceFor(product);
     final hasVariants = product['has_variants'] == true || ((product['variants'] as List?)?.isNotEmpty ?? false);
     final modifierGroups = (product['modifier_groups'] as List?) ?? [];
@@ -1506,17 +1507,17 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
       onPressed: () => _handleProductTap(product),
       child: Container(
         decoration: BoxDecoration(
-          color: IOSColors.secondaryGroupedBackground.resolveFrom(context),
-          borderRadius: IOSRadius.cardRadius,
+          color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: IOSColors.separator.resolveFrom(context).withValues(alpha: isDark ? 0.35 : 0.25),
-            width: 0.6,
+            color: isDark ? const Color(0xFF2C2C2E) : const Color(0xFFE2E8F0),
+            width: 0.8,
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.04),
-              blurRadius: 10,
-              offset: const Offset(0, 3),
+              color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
             ),
           ],
         ),
@@ -1524,104 +1525,137 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Top Image Container with Overlaid Badges
-            Stack(
-              children: [
-                PosProductImage(
-                  imagePath: imagePath,
-                  width: double.infinity,
-                  height: 104,
-                  category: category,
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-                ),
-                // Category Pill (Top-Left)
-                Positioned(
-                  top: 7,
-                  left: 7,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                    decoration: BoxDecoration(
-                      color: isDark ? CupertinoColors.black.withValues(alpha: 0.7) : CupertinoColors.white.withValues(alpha: 0.92),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: (isDark ? CupertinoColors.white : CupertinoColors.black).withValues(alpha: 0.08),
-                        width: 0.5,
-                      ),
-                    ),
-                    child: Text(
-                      category,
-                      style: IOSText.caption2.copyWith(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 9.5,
-                        color: isDark ? CupertinoColors.white : const Color(0xFF1E293B),
-                      ),
+            // Top Image Container with Overlaid Badges (Uncropped, AspectRatio 1.18)
+            AspectRatio(
+              aspectRatio: 1.18,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Container(
+                    color: isDark ? const Color(0xFF242426) : const Color(0xFFF8FAFC),
+                    padding: const EdgeInsets.all(4),
+                    child: PosProductImage(
+                      imagePath: imagePath,
+                      width: double.infinity,
+                      height: double.infinity,
+                      fit: BoxFit.contain,
+                      category: category,
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
                     ),
                   ),
-                ),
-                // Variants / Custom Modifiers Pill (Top-Right)
-                if (hasVariants)
+                  // Category Pill (Top-Left)
                   Positioned(
-                    top: 7,
-                    right: 7,
+                    top: 6,
+                    left: 6,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF007AFF).withValues(alpha: 0.92),
+                        color: isDark ? CupertinoColors.black.withValues(alpha: 0.75) : CupertinoColors.white.withValues(alpha: 0.95),
                         borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: const Text(
-                        'Varian',
-                        style: TextStyle(
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.bold,
-                          color: CupertinoColors.white,
+                        border: Border.all(
+                          color: (isDark ? CupertinoColors.white : CupertinoColors.black).withValues(alpha: 0.08),
+                          width: 0.5,
                         ),
                       ),
-                    ),
-                  )
-                else if (modifierGroups.isNotEmpty)
-                  Positioned(
-                    top: 7,
-                    right: 7,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFF9500).withValues(alpha: 0.92),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: const Text(
-                        'Kustom',
+                      child: Text(
+                        category,
                         style: TextStyle(
+                          fontWeight: FontWeight.w600,
                           fontSize: 9.5,
-                          fontWeight: FontWeight.bold,
-                          color: CupertinoColors.white,
+                          color: isDark ? CupertinoColors.white : const Color(0xFF1E293B),
+                          decoration: TextDecoration.none,
                         ),
                       ),
                     ),
                   ),
-              ],
+                  // Variants / Custom Modifiers Pill (Top-Right)
+                  if (hasVariants)
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF007AFF),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text(
+                          'Varian',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.bold,
+                            color: CupertinoColors.white,
+                            decoration: TextDecoration.none,
+                          ),
+                        ),
+                      ),
+                    )
+                  else if (modifierGroups.isNotEmpty)
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF9500),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text(
+                          'Kustom',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.bold,
+                            color: CupertinoColors.white,
+                            decoration: TextDecoration.none,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
 
-            // Bottom Product Info
+            // Bottom Product Info (Name, SKU, Price, and Tactile Add Button)
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      name,
-                      style: IOSText.subhead.copyWith(
-                        fontWeight: FontWeight.bold,
-                        height: 1.2,
-                        color: IOSColors.label.resolveFrom(context),
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          name,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            height: 1.25,
+                            color: IOSColors.label.resolveFrom(context),
+                            decoration: TextDecoration.none,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          (sku != null && sku.isNotEmpty) ? sku : category,
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w500,
+                            color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                            decoration: TextDecoration.none,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Expanded(
                           child: FittedBox(
@@ -1629,25 +1663,35 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                             alignment: Alignment.centerLeft,
                             child: Text(
                               _currency.format(price),
-                              style: IOSText.tabular(IOSText.subhead).copyWith(
+                              style: TextStyle(
+                                fontSize: 15,
                                 fontWeight: FontWeight.w800,
-                                color: IOSColors.accent.resolveFrom(context),
+                                color: isDark ? CupertinoColors.white : const Color(0xFF0F172A),
+                                decoration: TextDecoration.none,
                               ),
                             ),
                           ),
                         ),
-                        const SizedBox(width: 4),
+                        const SizedBox(width: 6),
                         Container(
-                          width: 26,
-                          height: 26,
+                          width: 30,
+                          height: 30,
                           decoration: BoxDecoration(
-                            color: IOSColors.accent.resolveFrom(context).withValues(alpha: 0.12),
+                            color: const Color(0xFF007AFF),
                             shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF007AFF).withValues(alpha: 0.3),
+                                blurRadius: 4,
+                                offset: const Offset(0, 1.5),
+                              ),
+                            ],
                           ),
-                          child: Icon(
-                            CupertinoIcons.add,
-                            size: 14,
-                            color: IOSColors.accent.resolveFrom(context),
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            CupertinoIcons.plus,
+                            size: 17,
+                            color: CupertinoColors.white,
                           ),
                         ),
                       ],

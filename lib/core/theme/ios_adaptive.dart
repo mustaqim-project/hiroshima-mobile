@@ -45,29 +45,29 @@ SliverGridDelegateWithFixedCrossAxisCount iosProductGridDelegate({
 }) {
   final width = MediaQuery.sizeOf(context).width;
   int columns = 2;
-  double aspectRatio = 0.82;
+  double aspectRatio = 0.70;
 
   if (isSplitView) {
     // In tablet split-view (catalog pane is ~65% of width)
     final catalogWidth = width * 0.65;
     if (catalogWidth >= 800) {
       columns = 4;
-      aspectRatio = 0.76;
+      aspectRatio = 0.68;
     } else if (catalogWidth >= 520) {
       columns = 3;
-      aspectRatio = 0.74;
+      aspectRatio = 0.67;
     } else {
       columns = 2;
-      aspectRatio = 0.72;
+      aspectRatio = 0.66;
     }
   } else {
     // Phone or full width
     if (width >= 600) {
       columns = 3;
-      aspectRatio = 0.75;
+      aspectRatio = 0.68;
     } else {
       columns = 2;
-      aspectRatio = 0.71;
+      aspectRatio = 0.66;
     }
   }
 
