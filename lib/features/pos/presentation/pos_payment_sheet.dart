@@ -1,0 +1,524 @@
+// @req FR-POS-06, FR-POS-07, FR-POS-14, FR-POS-17, FR-PRN-01, FR-PRN-02, FR-OFF-01, FSD-06, FSD-10, FSD-14
+// Apple HIG Payment & Bluetooth Thermal Printing Sheet for Hiroshima POS
+
+import 'package:flutter/cupertino.dart';
+import 'package:intl/intl.dart';
+import 'package:uuid/uuid.dart';
+import '../../../../core/pricing/order_calculator.dart';
+import '../../../../core/printing/thermal_printer_service.dart';
+import '../../../../core/sync/pos_sync_service.dart';
+import '../../../../core/time/trusted_clock.dart';
+import '../../../../core/theme/ios_tokens.dart';
+import '../../../../core/theme/ios_components.dart';
+
+class PosPaymentSheet extends StatefulWidget {
+  const PosPaymentSheet({
+    super.key,
+    required this.cart,
+    required this.calculation,
+    required this.orderType,
+    required this.orderTypeId,
+    required this.tableNo,
+    required this.onPaymentSuccess,
+  });
+
+  final List<Map<String, dynamic>> cart;
+  final OrderCalculationResult calculation;
+  final String orderType;
+  final int orderTypeId;
+  final String? tableNo;
+  final VoidCallback onPaymentSuccess;
+
+  static Future<void> show({
+    required BuildContext context,
+    required List<Map<String, dynamic>> cart,
+    required OrderCalculationResult calculation,
+    required String orderType,
+    required int orderTypeId,
+    required String? tableNo,
+    required VoidCallback onPaymentSuccess,
+  }) {
+    return showCupertinoModalPopup<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => PosPaymentSheet(
+        cart: cart,
+        calculation: calculation,
+        orderType: orderType,
+        orderTypeId: orderTypeId,
+        tableNo: tableNo,
+        onPaymentSuccess: onPaymentSuccess,
+      ),
+    );
+  }
+
+  @override
+  State<PosPaymentSheet> createState() => _PosPaymentSheetState();
+}
+
+class _PosPaymentSheetState extends State<PosPaymentSheet> {
+  final _currency = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
+  final TextEditingController _cashInputController = TextEditingController();
+
+  late Map<String, dynamic> _selectedPaymentMethod;
+  int _cashGiven = 0;
+  bool _isProcessing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final methods = PosSyncService.instance.paymentMethods;
+    if (methods.isNotEmpty) {
+      _selectedPaymentMethod = methods.first;
+    } else {
+      _selectedPaymentMethod = {'id': 1, 'name': 'Tunai', 'code': 'CASH'};
+    }
+
+    _cashGiven = widget.calculation.totalAmount;
+    _cashInputController.text = _cashGiven.toString();
+  }
+
+  @override
+  void dispose() {
+    _cashInputController.dispose();
+    super.dispose();
+  }
+
+  bool get _isCash =>
+      (_selectedPaymentMethod['code'] ?? _selectedPaymentMethod['name'] ?? '').toString().toLowerCase().contains('cash') ||
+      (_selectedPaymentMethod['name'] ?? '').toString().toLowerCase().contains('tunai');
+
+  int get _changeAmount => _isCash ? (_cashGiven - widget.calculation.totalAmount) : 0;
+  bool get _canSubmit => !_isCash || (_cashGiven >= widget.calculation.totalAmount);
+
+  Future<void> _handleProcessPayment() async {
+    if (!_canSubmit) return;
+
+    setState(() => _isProcessing = true);
+
+    final calc = widget.calculation;
+    final branch = PosSyncService.instance.branch;
+    final branchName = (branch['name'] as String?) ?? 'Hiroshima Japanese Street Food';
+    final branchAddress = (branch['address'] as String?) ?? 'Jl. Cikini Raya No. 42, Jakarta Pusat';
+    final branchPhone = (branch['phone'] as String?) ?? '021-31900123';
+
+    final orderNo = 'HRS01-POS-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
+    final orderUuid = const Uuid().v4();
+    final transactionTime = TrustedClock().now;
+    const cashierName = 'Kasir Hiroshima';
+
+    // Build Payload for Backend Push (FSD-10)
+    final orderPayload = {
+      'uuid': orderUuid,
+      'order_no': orderNo,
+      'branch_id': branch['id'] ?? 1,
+      'user_id': 1,
+      'order_type_id': widget.orderTypeId,
+      'table_id': widget.tableNo != null ? int.tryParse(widget.tableNo!) : null,
+      'client_created_at': transactionTime.toIso8601String(),
+      'subtotal': calc.subtotal,
+      'promo_discount_amount': calc.promoDiscount,
+      'voucher_discount_amount': calc.voucherDiscount,
+      'loyalty_discount_amount': calc.loyaltyDiscount,
+      'manual_discount_amount': calc.manualDiscount,
+      'manual_discount_reason': calc.manualDiscount > 0 ? 'Diskon manual' : null,
+      'service_charge_amount': calc.serviceChargeAmount,
+      'tax_amount': calc.taxAmount,
+      'rounding_amount': calc.roundingAmount,
+      'total_amount': calc.totalAmount,
+      'paid_amount': _isCash ? _cashGiven : calc.totalAmount,
+      'change_amount': _changeAmount > 0 ? _changeAmount : 0,
+      'items': widget.cart.map((item) {
+        return {
+          'product_id': item['id'],
+          'product_variant_id': item['variant_id'],
+          'product_name': item['name'],
+          'variant_name': item['variant_name'],
+          'quantity': item['qty'],
+          'unit_price': item['price'],
+          'subtotal': (item['price'] as int) * (item['qty'] as int),
+          'notes': item['notes'],
+          'modifiers': ((item['modifiers'] as List<dynamic>?) ?? []).map((m) => {
+            'modifier_id': m['modifier_id'] ?? m['id'],
+            'modifier_name': m['name'] ?? m['modifier_name'],
+            'unit_price': m['price'] ?? m['unit_price'] ?? 0,
+            'quantity': 1,
+          }).toList(),
+        };
+      }).toList(),
+      'payments': [
+        {
+          'payment_method_id': _selectedPaymentMethod['id'] ?? 1,
+          'amount': _isCash ? _cashGiven : calc.totalAmount,
+        }
+      ],
+    };
+
+    // 1. Submit to local outbox & sync backend
+    await PosSyncService.instance.submitOrder(orderPayload);
+
+    // 2. Bluetooth Thermal Print (Dual Copy: Rangkap 1 & Rangkap 2)
+    String printNotice = '';
+    if (ThermalPrinterService.instance.autoPrintOnCheckout) {
+      final printRes = await ThermalPrinterService.instance.printOrderDualCopy(
+        branchName: branchName,
+        branchAddress: branchAddress,
+        branchPhone: branchPhone,
+        orderNo: orderNo,
+        tableNo: widget.tableNo,
+        orderTypeName: widget.orderType,
+        cashierName: cashierName,
+        transactionTime: transactionTime,
+        items: widget.cart,
+        subtotal: calc.subtotal,
+        totalDiscount: calc.totalDiscount,
+        serviceChargeAmount: calc.serviceChargeAmount,
+        taxAmount: calc.taxAmount,
+        roundingAmount: calc.roundingAmount,
+        totalAmount: calc.totalAmount,
+        payments: [
+          {
+            'method': _selectedPaymentMethod['name'] ?? 'Tunai',
+            'amount': _isCash ? _cashGiven : calc.totalAmount,
+          }
+        ],
+        changeAmount: _changeAmount > 0 ? _changeAmount : 0,
+        openDrawer: _isCash,
+      );
+
+      printNotice = printRes.success
+          ? 'Struk Rangkap 1 & Rangkap 2 berhasil dicetak ke printer Bluetooth.'
+          : printRes.message;
+    }
+
+    if (!mounted) return;
+    setState(() => _isProcessing = false);
+
+    // Close payment modal
+    Navigator.pop(context);
+    widget.onPaymentSuccess();
+
+    // Show Success Dialog
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(CupertinoIcons.checkmark_circle_fill, color: IOSColors.accentLight, size: 22),
+            const SizedBox(width: 8),
+            const Text('Pembayaran Berhasil'),
+          ],
+        ),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('No. Order: $orderNo', style: const TextStyle(fontWeight: FontWeight.bold)),
+              Text('Metode   : ${_selectedPaymentMethod['name'] ?? "Tunai"}'),
+              Text('Total    : ${_currency.format(calc.totalAmount)}'),
+              if (_isCash && _changeAmount > 0)
+                Text('Kembalian: ${_currency.format(_changeAmount)}', style: const TextStyle(fontWeight: FontWeight.bold, color: IOSColors.accentLight)),
+              const SizedBox(height: 8),
+              if (printNotice.isNotEmpty)
+                Text(printNotice, style: const TextStyle(fontSize: 12, color: CupertinoColors.systemGrey)),
+            ],
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            child: const Text('Selesai'),
+            onPressed: () => Navigator.pop(ctx),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final calc = widget.calculation;
+    final paymentMethods = PosSyncService.instance.paymentMethods;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: IOSColors.groupedBackground.resolveFrom(context),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.90,
+        maxWidth: 580,
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Grabber handle
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 10, bottom: 6),
+                width: 36,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: CupertinoColors.systemGrey3.resolveFrom(context),
+                  borderRadius: BorderRadius.circular(2.5),
+                ),
+              ),
+            ),
+
+            // Header
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  const Icon(CupertinoIcons.creditcard_fill, size: 24, color: IOSColors.accentLight),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Penyelesaian Pembayaran', style: IOSText.headline),
+                        Text(
+                          '${widget.orderType}${widget.tableNo != null ? " • Meja ${widget.tableNo}" : ""}',
+                          style: IOSText.footnote.copyWith(
+                            color: IOSColors.secondaryLabel.resolveFrom(context),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: () => Navigator.pop(context),
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: IOSColors.systemFill.resolveFrom(context),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        CupertinoIcons.xmark,
+                        size: 16,
+                        color: IOSColors.secondaryLabel.resolveFrom(context),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              height: 0.5,
+              color: IOSColors.separator.resolveFrom(context).withValues(alpha: 0.4),
+            ),
+
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Total Bayar Card
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: IOSColors.accent.resolveFrom(context).withValues(alpha: 0.08),
+                        borderRadius: IOSRadius.cardRadius,
+                        border: Border.all(
+                          color: IOSColors.accent.resolveFrom(context).withValues(alpha: 0.25),
+                          width: 1,
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Text('TOTAL YANG HARUS DIBAYAR', style: IOSText.caption1.copyWith(fontWeight: FontWeight.bold, color: IOSColors.accent.resolveFrom(context))),
+                          const SizedBox(height: 4),
+                          Text(
+                            _currency.format(calc.totalAmount),
+                            style: IOSText.tabular(IOSText.largeTitle).copyWith(
+                              fontWeight: FontWeight.w900,
+                              color: IOSColors.accent.resolveFrom(context),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // Payment Methods Selection (from Backend)
+                    Text('METODE PEMBAYARAN', style: IOSText.caption1.copyWith(color: IOSColors.secondaryLabel.resolveFrom(context), fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    IOSGroupedCard(
+                      children: [
+                        if (paymentMethods.isEmpty)
+                          CupertinoListTile(
+                            title: const Text('Tunai (Cash)'),
+                            trailing: Icon(CupertinoIcons.checkmark_circle_fill, color: IOSColors.accent.resolveFrom(context)),
+                          )
+                        else
+                          for (int i = 0; i < paymentMethods.length; i++) ...[
+                            if (i > 0)
+                              Container(
+                                height: 0.5,
+                                margin: const EdgeInsets.only(left: 48),
+                                color: IOSColors.separator.resolveFrom(context).withValues(alpha: 0.4),
+                              ),
+                            Builder(
+                              builder: (_) {
+                                final pm = paymentMethods[i];
+                                final isSel = _selectedPaymentMethod['id'] == pm['id'];
+                                final name = pm['name'] as String? ?? 'Metode';
+
+                                IconData pIcon = CupertinoIcons.money_dollar;
+                                if (name.toLowerCase().contains('qris')) {
+                                  pIcon = CupertinoIcons.qrcode;
+                                } else if (name.toLowerCase().contains('kartu') || name.toLowerCase().contains('edc')) {
+                                  pIcon = CupertinoIcons.creditcard;
+                                } else if (name.toLowerCase().contains('transfer')) {
+                                  pIcon = CupertinoIcons.arrow_right_arrow_left;
+                                }
+
+                                return CupertinoListTile(
+                                  onTap: () {
+                                    setState(() {
+                                      _selectedPaymentMethod = pm;
+                                      if (!_isCash) {
+                                        _cashGiven = calc.totalAmount;
+                                      }
+                                    });
+                                  },
+                                  leading: Icon(pIcon, color: isSel ? IOSColors.accent.resolveFrom(context) : IOSColors.secondaryLabel.resolveFrom(context)),
+                                  title: Text(name, style: IOSText.body.copyWith(fontWeight: isSel ? FontWeight.bold : FontWeight.normal)),
+                                  trailing: Icon(
+                                    isSel ? CupertinoIcons.checkmark_circle_fill : CupertinoIcons.circle,
+                                    color: isSel ? IOSColors.accent.resolveFrom(context) : CupertinoColors.systemGrey4,
+                                    size: 20,
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                      ],
+                    ),
+
+                    // Cash Input & Change Calculation Section
+                    if (_isCash) ...[
+                      const SizedBox(height: 16),
+                      Text('UANG TUNAI DITERIMA', style: IOSText.caption1.copyWith(color: IOSColors.secondaryLabel.resolveFrom(context), fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 6),
+                      IOSGroupedCard(
+                        padding: const EdgeInsets.all(12),
+                        children: [
+                          CupertinoTextField(
+                            controller: _cashInputController,
+                            keyboardType: TextInputType.number,
+                            prefix: Padding(
+                              padding: const EdgeInsets.only(left: 12),
+                              child: Text('Rp ', style: IOSText.headline),
+                            ),
+                            style: IOSText.title2.copyWith(fontWeight: FontWeight.bold),
+                            decoration: null,
+                            onChanged: (val) {
+                              setState(() {
+                                _cashGiven = int.tryParse(val) ?? 0;
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+
+                      // Quick Denomination Chips
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          CupertinoButton(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            color: IOSColors.secondaryGroupedBackground.resolveFrom(context),
+                            borderRadius: BorderRadius.circular(10),
+                            onPressed: () {
+                              setState(() {
+                                _cashGiven = calc.totalAmount;
+                                _cashInputController.text = _cashGiven.toString();
+                              });
+                            },
+                            child: Text('Uang Pas', style: IOSText.footnote.copyWith(color: IOSColors.accent.resolveFrom(context), fontWeight: FontWeight.bold)),
+                          ),
+                          for (final amt in [50000, 100000, 150000, 200000])
+                            if (amt >= calc.totalAmount)
+                              CupertinoButton(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                color: IOSColors.secondaryGroupedBackground.resolveFrom(context),
+                                borderRadius: BorderRadius.circular(10),
+                                onPressed: () {
+                                  setState(() {
+                                    _cashGiven = amt;
+                                    _cashInputController.text = amt.toString();
+                                  });
+                                },
+                                child: Text(_currency.format(amt), style: IOSText.footnote.copyWith(color: IOSColors.label.resolveFrom(context))),
+                              ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      // Kembalian
+                      IOSGroupedCard(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('Kembalian', style: IOSText.body.copyWith(fontWeight: FontWeight.w600)),
+                              Text(
+                                _changeAmount >= 0 ? _currency.format(_changeAmount) : 'Uang Kurang',
+                                style: IOSText.tabular(IOSText.headline).copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: _changeAmount >= 0 ? IOSColors.success.resolveFrom(context) : IOSColors.destructive.resolveFrom(context),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+
+            // Bottom Action Button
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: IOSColors.secondaryGroupedBackground.resolveFrom(context),
+                border: Border(
+                  top: BorderSide(
+                    color: IOSColors.separator.resolveFrom(context).withValues(alpha: 0.5),
+                    width: 0.5,
+                  ),
+                ),
+              ),
+              child: IOSButton(
+                label: 'Konfirmasi Bayar & Cetak Struk',
+                icon: CupertinoIcons.printer_fill,
+                variant: IOSButtonVariant.filled,
+                isLoading: _isProcessing,
+                expanded: true,
+                onPressed: _canSubmit && !_isProcessing ? _handleProcessPayment : null,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
