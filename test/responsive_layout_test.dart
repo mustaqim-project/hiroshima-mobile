@@ -91,6 +91,56 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('PosTabletScreen renders category menu in left vertical rail on compact phone', (WidgetTester tester) async {
+      tester.view.physicalSize = phoneSize;
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      PosSyncService.instance.setMockUser({
+        'id': 1,
+        'name': 'Kasir Cikini',
+        'role': 'cashier',
+      });
+
+      PosSyncService.instance.applyCatalogDataForTesting({
+        'branch': {'id': 1, 'name': 'Hiroshima Cikini', 'code': 'HRS-CKN'},
+        'categories': [
+          {'id': 1, 'name': 'Makanan', 'code': 'MKN'},
+          {'id': 2, 'name': 'Minuman', 'code': 'MNM'},
+        ],
+        'products': [
+          {'id': 10, 'name': 'Tori Paitan Ramen', 'category_id': 1, 'price': 38000, 'has_variants': false},
+        ],
+        'order_types': [{'id': 1, 'name': 'Dine In', 'requires_table': true}],
+        'product_prices': [],
+        'tables': [],
+        'payment_methods': [{'id': 1, 'name': 'Tunai', 'code': 'CASH'}],
+      });
+
+      await tester.pumpWidget(const CupertinoApp(home: PosTabletScreen()));
+      await tester.pumpAndSettle();
+
+      // Check category rail elements
+      expect(find.text('Semua'), findsOneWidget);
+      expect(find.text('Makanan'), findsWidgets);
+      expect(find.text('Minuman'), findsOneWidget);
+
+      // Verify categories are arranged in a vertical list view (axis: vertical)
+      final categoryRailListView = tester.widget<ListView>(
+        find.ancestor(
+          of: find.text('Semua'),
+          matching: find.byType(ListView),
+        ).first,
+      );
+      expect(categoryRailListView.scrollDirection, Axis.vertical);
+
+      // Switching category works smoothly
+      await tester.tap(find.text('Minuman'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('PosShiftSheet renders on phone without overflow', (WidgetTester tester) async {
       tester.view.physicalSize = phoneSize;
       tester.view.devicePixelRatio = 1.0;
@@ -248,6 +298,46 @@ void main() {
       expect(find.text('Pesanan Berjalan'), findsOneWidget);
       expect(find.text('Dine In'), findsOneWidget);
       expect(find.text('Take Away'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('PosTabletScreen maintains category menu horizontally on top on tablet', (WidgetTester tester) async {
+      tester.view.physicalSize = tabletSize;
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      PosSyncService.instance.setMockUser({
+        'id': 1,
+        'name': 'Kasir Cikini',
+        'role': 'cashier',
+      });
+
+      PosSyncService.instance.applyCatalogDataForTesting({
+        'branch': {'id': 1, 'name': 'Hiroshima Cikini', 'code': 'HRS-CKN'},
+        'categories': [
+          {'id': 1, 'name': 'Makanan', 'code': 'MKN'},
+          {'id': 2, 'name': 'Minuman', 'code': 'MNM'},
+        ],
+        'products': [
+          {'id': 10, 'name': 'Tori Paitan Ramen', 'category_id': 1, 'price': 38000, 'has_variants': false},
+        ],
+        'order_types': [{'id': 1, 'name': 'Dine In', 'requires_table': true}],
+        'product_prices': [],
+        'tables': [],
+        'payment_methods': [{'id': 1, 'name': 'Tunai', 'code': 'CASH'}],
+      });
+
+      await tester.pumpWidget(const CupertinoApp(home: PosTabletScreen()));
+      await tester.pumpAndSettle();
+
+      // On tablet, categories are inside horizontal ListView
+      final tabletCategoryListView = tester.widget<ListView>(
+        find.ancestor(
+          of: find.text('Semua'),
+          matching: find.byType(ListView),
+        ).first,
+      );
+      expect(tabletCategoryListView.scrollDirection, Axis.horizontal);
       expect(tester.takeException(), isNull);
     });
 

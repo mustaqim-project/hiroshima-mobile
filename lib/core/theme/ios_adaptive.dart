@@ -67,10 +67,10 @@ SliverGridDelegateWithFixedCrossAxisCount iosProductGridDelegate({
       aspectRatio = 0.78;
     } else if (width >= 600) {
       columns = 3;
-      aspectRatio = 0.77;
+      aspectRatio = 0.75;
     } else {
       columns = 2;
-      aspectRatio = 0.75;
+      aspectRatio = 0.68;
     }
   }
 

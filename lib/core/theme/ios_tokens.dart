@@ -132,7 +132,7 @@ abstract final class IOSText {
 // ───────────────────────── 6. System UI & Theme ─────────────────────────
 abstract final class IOSSystemUi {
   static Future<void> init() async {
-    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
 
   static SystemUiOverlayStyle styleFor(Brightness brightness) {

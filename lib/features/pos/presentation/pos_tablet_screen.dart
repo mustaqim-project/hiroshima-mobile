@@ -28,7 +28,7 @@ class PosTabletScreen extends StatefulWidget {
   State<PosTabletScreen> createState() => _PosTabletScreenState();
 }
 
-class _PosTabletScreenState extends State<PosTabletScreen> {
+class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingObserver {
   final _currency = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
   final TextEditingController _searchController = TextEditingController();
 
@@ -45,6 +45,8 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     PosSyncService.instance.addListener(_onSyncChange);
     ThermalPrinterService.instance.addListener(_onPrinterChange);
 
@@ -55,11 +57,19 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     PosSyncService.instance.stopAutoSync();
     PosSyncService.instance.removeListener(_onSyncChange);
     ThermalPrinterService.instance.removeListener(_onPrinterChange);
     _searchController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    }
   }
 
   void _onSyncChange() {
@@ -115,14 +125,26 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
           final code = c['code'] as String? ?? '';
           IconData icon = CupertinoIcons.tag;
           final lower = name.toLowerCase();
-          if (code == 'MNM' || lower.contains('minum') || lower.contains('bev')) {
+          if (code == 'MNM' || lower.contains('minum') || lower.contains('bev') || lower.contains('kopi') || lower.contains('coffee')) {
             icon = CupertinoIcons.drop;
-          } else if (code == 'PKT' || lower.contains('paket')) {
+          } else if (code == 'PKT' || lower.contains('paket') || lower.contains('combo')) {
             icon = CupertinoIcons.cube_box;
-          } else if (code == 'PRM' || lower.contains('promo')) {
+          } else if (code == 'PRM' || lower.contains('promo') || lower.contains('diskon')) {
             icon = CupertinoIcons.percent;
-          } else if (code == 'MKN' || lower.contains('makan')) {
+          } else if (code == 'MKN' || lower.contains('makan') || lower.contains('food') || lower.contains('snack')) {
             icon = CupertinoIcons.flame;
+          } else if (lower.contains('fisik') || lower.contains('barang')) {
+            icon = CupertinoIcons.cube_box;
+          } else if (lower.contains('jasa') || lower.contains('serv') || lower.contains('layanan')) {
+            icon = CupertinoIcons.wrench;
+          } else if (lower.contains('utama')) {
+            icon = CupertinoIcons.star;
+          } else if (lower.contains('lengkap') || lower.contains('tambah')) {
+            icon = CupertinoIcons.plus_circle;
+          } else if (lower.contains('market')) {
+            icon = CupertinoIcons.tag;
+          } else if (lower.contains('user') || lower.contains('pelanggan') || lower.contains('konsultasi')) {
+            icon = CupertinoIcons.person;
           }
           return {'name': name, 'icon': icon};
         }),
@@ -1688,117 +1710,259 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
   }) {
     final syncService = PosSyncService.instance;
 
+    if (isSplitView) {
+      // ==========================================
+      // TABLET: Categories horizontally on top (100% unchanged for tablet / split-view)
+      // ==========================================
+      return Column(
+        children: [
+          // Search Bar
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: CupertinoSearchTextField(
+                    controller: _searchController,
+                    placeholder: 'Cari menu, paket, atau minuman...',
+                    style: IOSText.body,
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Categories Horizontal Bar (Tablet)
+          SizedBox(
+            height: 44,
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              scrollDirection: Axis.horizontal,
+              itemCount: categories.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (ctx, i) {
+                final cat = categories[i];
+                final name = cat['name'] as String;
+                final icon = cat['icon'] as IconData?;
+                final isSel = _selectedCategory == name;
+
+                return IOSChip(
+                  label: name,
+                  icon: icon,
+                  isSelected: isSel,
+                  onTap: () => setState(() => _selectedCategory = name),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          // Product Grid or Empty State
+          Expanded(
+            child: products.isEmpty
+                ? _buildEmptyCatalogState(syncService)
+                : GridView.builder(
+                    padding: const EdgeInsets.all(16),
+                    gridDelegate: iosProductGridDelegate(context: context, isSplitView: true),
+                    itemCount: products.length,
+                    itemBuilder: (ctx, i) {
+                      final p = products[i];
+                      return _buildProductCard(p);
+                    },
+                  ),
+          ),
+        ],
+      );
+    }
+
+    // ==========================================
+    // MOBILE PHONE: Categories on the LEFT side as vertical rail, Order Type on Top
+    // ==========================================
     return Column(
       children: [
-        // Category Pills & Search Bar
+        // Order Type Selector on top (Dine In, Takeaway, GoFood, GrabFood, ShopeeFood)
+        _buildOrderTypeSelector(),
+
+        // Compact Search Bar on Phone
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          padding: const EdgeInsets.fromLTRB(10, 2, 10, 4),
+          child: CupertinoSearchTextField(
+            controller: _searchController,
+            placeholder: 'Cari menu, paket, minuman...',
+            style: IOSText.subhead,
+            onChanged: (_) => setState(() {}),
+          ),
+        ),
+
+        // Main Body: Left Vertical Category Rail + Right Product Grid
+        Expanded(
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Left Vertical Category Rail
+              _buildVerticalCategoryRail(categories),
+
+              // Right Product Grid or Empty State
               Expanded(
-                child: CupertinoSearchTextField(
-                  controller: _searchController,
-                  placeholder: 'Cari menu, paket, atau minuman...',
-                  style: IOSText.body,
-                  onChanged: (_) => setState(() {}),
-                ),
+                child: products.isEmpty
+                    ? _buildEmptyCatalogState(syncService)
+                    : GridView.builder(
+                        padding: const EdgeInsets.fromLTRB(2, 4, 8, 16),
+                        gridDelegate: iosProductGridDelegate(context: context, isSplitView: false),
+                        itemCount: products.length,
+                        itemBuilder: (ctx, i) {
+                          final p = products[i];
+                          return _buildProductCard(p);
+                        },
+                      ),
               ),
             ],
           ),
         ),
-
-        // Order Type Selector on phone view so cashier can switch Dine In / Take Away / Delivery directly while browsing
-        if (!isSplitView)
-          _buildOrderTypeSelector(),
-
-        // Categories Horizontal Bar
-        SizedBox(
-          height: 44,
-          child: ListView.separated(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            scrollDirection: Axis.horizontal,
-            itemCount: categories.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 8),
-            itemBuilder: (ctx, i) {
-              final cat = categories[i];
-              final name = cat['name'] as String;
-              final icon = cat['icon'] as IconData?;
-              final isSel = _selectedCategory == name;
-
-              return IOSChip(
-                label: name,
-                icon: icon,
-                isSelected: isSel,
-                onTap: () => setState(() => _selectedCategory = name),
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 8),
-
-        // Product Grid or Empty State
-        Expanded(
-          child: products.isEmpty
-              ? (syncService.isSyncing
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const CupertinoActivityIndicator(radius: 14),
-                          const SizedBox(height: 12),
-                          Text(
-                            'Mengambil data katalog dari backend...',
-                            style: IOSText.footnote.copyWith(color: IOSColors.secondaryLabel.resolveFrom(context)),
-                          ),
-                        ],
-                      ),
-                    )
-                  : Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(32),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(CupertinoIcons.tray, size: 54, color: IOSColors.tertiaryLabel.resolveFrom(context)),
-                            const SizedBox(height: 12),
-                            Text(
-                              'Tidak ada menu ditemukan dari backend',
-                              style: IOSText.headline.copyWith(color: IOSColors.label.resolveFrom(context)),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              'Pastikan server backend Laravel aktif dan URL server sesuai.',
-                              textAlign: TextAlign.center,
-                              style: IOSText.footnote.copyWith(color: IOSColors.secondaryLabel.resolveFrom(context)),
-                            ),
-                            const SizedBox(height: 16),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                IOSButton(
-                                  label: 'Tarik Data Backend',
-                                  icon: CupertinoIcons.arrow_clockwise,
-                                  variant: IOSButtonVariant.tinted,
-                                  onPressed: () => syncService.fetchCatalog(),
-                                ),
-
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ))
-              : GridView.builder(
-                  padding: const EdgeInsets.all(16),
-                  gridDelegate: iosProductGridDelegate(context: context, isSplitView: isSplitView),
-                  itemCount: products.length,
-                  itemBuilder: (ctx, i) {
-                    final p = products[i];
-                    return _buildProductCard(p);
-                  },
-                ),
-        ),
       ],
+    );
+  }
+
+  // ───────────────────────── Vertical Category Rail (Mobile Phone) ─────────────────────────
+  Widget _buildVerticalCategoryRail(List<Map<String, dynamic>> categories) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return SizedBox(
+      width: 78,
+      child: ListView.separated(
+        padding: const EdgeInsets.only(left: 8, right: 4, top: 4, bottom: 16),
+        physics: const BouncingScrollPhysics(),
+        itemCount: categories.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 6),
+        itemBuilder: (ctx, i) {
+          final cat = categories[i];
+          final name = cat['name'] as String;
+          final icon = (cat['icon'] as IconData?) ?? CupertinoIcons.tag;
+          final isSel = _selectedCategory == name;
+
+          return CupertinoButton(
+            padding: EdgeInsets.zero,
+            pressedOpacity: 0.7,
+            onPressed: () {
+              HapticFeedback.selectionClick();
+              setState(() => _selectedCategory = name);
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              width: 70,
+              constraints: const BoxConstraints(minHeight: 64),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+              decoration: BoxDecoration(
+                color: isSel
+                    ? const Color(0xFF007AFF)
+                    : (isDark ? const Color(0xFF1C1C1E) : Colors.white),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: isSel
+                      ? const Color(0xFF007AFF)
+                      : (isDark ? const Color(0xFF2C2C2E) : const Color(0xFFE2E8F0)),
+                  width: 1.0,
+                ),
+                boxShadow: isSel
+                    ? [
+                        BoxShadow(
+                          color: const Color(0xFF007AFF).withValues(alpha: 0.32),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ]
+                    : [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.03),
+                          blurRadius: 4,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    icon,
+                    size: 22,
+                    color: isSel
+                        ? CupertinoColors.white
+                        : (isDark ? const Color(0xFF8E8E93) : const Color(0xFF64748B)),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    name,
+                    maxLines: 2,
+                    textAlign: TextAlign.center,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: isSel ? FontWeight.w700 : FontWeight.w500,
+                      color: isSel
+                          ? CupertinoColors.white
+                          : (isDark ? const Color(0xFFD1D5DB) : const Color(0xFF334155)),
+                      height: 1.15,
+                      decoration: TextDecoration.none,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ───────────────────────── Empty / Syncing State ─────────────────────────
+  Widget _buildEmptyCatalogState(PosSyncService syncService) {
+    if (syncService.isSyncing) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CupertinoActivityIndicator(radius: 14),
+            const SizedBox(height: 12),
+            Text(
+              'Mengambil data katalog dari backend...',
+              style: IOSText.footnote.copyWith(color: IOSColors.secondaryLabel.resolveFrom(context)),
+            ),
+          ],
+        ),
+      );
+    }
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(CupertinoIcons.tray, size: 54, color: IOSColors.tertiaryLabel.resolveFrom(context)),
+            const SizedBox(height: 12),
+            Text(
+              'Tidak ada menu ditemukan dari backend',
+              style: IOSText.headline.copyWith(color: IOSColors.label.resolveFrom(context)),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Pastikan server backend Laravel aktif dan URL server sesuai.',
+              textAlign: TextAlign.center,
+              style: IOSText.footnote.copyWith(color: IOSColors.secondaryLabel.resolveFrom(context)),
+            ),
+            const SizedBox(height: 16),
+            IOSButton(
+              label: 'Tarik Data Backend',
+              icon: CupertinoIcons.arrow_clockwise,
+              variant: IOSButtonVariant.tinted,
+              onPressed: () => syncService.fetchCatalog(),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1956,7 +2120,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
             // Bottom Product Info (Name, SKU, Price, and Tactile Add Button)
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
+                padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
