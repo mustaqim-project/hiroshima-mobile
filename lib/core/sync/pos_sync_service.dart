@@ -857,12 +857,12 @@ class PosSyncService extends ChangeNotifier {
     for (final p in _products) {
       final pId = p['id'];
       final defaultOtId = _orderTypes.isNotEmpty ? _orderTypes.first['id'] : 1;
-      p['price'] = getProductPrice(pId, defaultOtId, defaultPrice: (p['manual_cost'] as num?)?.toInt() ?? 25000);
+      p['price'] = getProductPrice(pId, defaultOtId, defaultPrice: (p['manual_cost'] as num?)?.toInt() ?? 0);
     }
   }
 
   /// Get specific product price for the selected order type
-  int getProductPrice(dynamic productId, dynamic orderTypeId, {int defaultPrice = 25000}) {
+  int getProductPrice(dynamic productId, dynamic orderTypeId, {int defaultPrice = 0}) {
     if (_productPrices.isEmpty) return defaultPrice;
 
     // 1. Match exact sellable_id and order_type_id

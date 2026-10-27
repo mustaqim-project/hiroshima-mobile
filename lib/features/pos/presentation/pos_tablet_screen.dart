@@ -76,19 +76,16 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
     return (b['name'] as String?) ?? PosSyncService.instance.appName;
   }
 
-  // Dynamic Order Types from Backend (100% API driven, no hardcoded dine-in)
+  // Dynamic Order Types from Backend (100% API driven, Zero Hardcode & Zero Dummy)
   List<Map<String, dynamic>> get _availableOrderTypes {
-    final ot = PosSyncService.instance.orderTypes;
-    if (ot.isNotEmpty) {
-      return ot;
-    }
-    return [
-      {'id': 1, 'name': 'Order Reguler', 'requires_table': true, 'is_default': true},
-    ];
+    return PosSyncService.instance.orderTypes;
   }
 
   Map<String, dynamic> get _activeOrderType {
     final list = _availableOrderTypes;
+    if (list.isEmpty) {
+      return {'id': 1, 'name': 'Pesanan', 'requires_table': false};
+    }
     if (_selectedOrderTypeIdState != null) {
       return list.firstWhere(
         (ot) => (ot['id'] as num?)?.toInt() == _selectedOrderTypeIdState,
@@ -157,7 +154,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
         'name': p['name'] as String,
         'sku': p['sku'] ?? 'SKU-${p['id']}',
         'category': cat['name'] as String,
-        'price': (p['price'] as num?)?.toInt() ?? 25000,
+        'price': (p['price'] as num?)?.toInt() ?? 0,
         'image_path': p['image_path'] ?? p['image_url'],
         'has_variants': hasVariants,
         'variants': variants,
@@ -212,7 +209,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
     return PosSyncService.instance.getProductPrice(
       product['id'],
       _selectedOrderTypeId,
-      defaultPrice: (product['price'] as num?)?.toInt() ?? 25000,
+      defaultPrice: (product['price'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -1771,28 +1768,46 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
           ),
 
           // Order Types Segmented Control (100% Dynamic from Backend API, Zero Hardcode)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: SizedBox(
-              width: double.infinity,
-              child: CupertinoSlidingSegmentedControl<int>(
-                groupValue: _selectedOrderTypeId,
-                children: {
-                  for (final ot in _availableOrderTypes)
-                    (ot['id'] as num).toInt(): Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      child: Text(
-                        (ot['name'] as String?) ?? 'Order',
-                        style: IOSText.caption1.copyWith(fontWeight: FontWeight.w600),
+          if (_availableOrderTypes.length >= 2)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: SizedBox(
+                width: double.infinity,
+                child: CupertinoSlidingSegmentedControl<int>(
+                  groupValue: _selectedOrderTypeId,
+                  children: {
+                    for (final ot in _availableOrderTypes)
+                      (ot['id'] as num).toInt(): Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        child: Text(
+                          (ot['name'] as String?) ?? 'Order',
+                          style: IOSText.caption1.copyWith(fontWeight: FontWeight.w600),
+                        ),
                       ),
-                    ),
-                },
-                onValueChanged: (val) {
-                  if (val != null) _onOrderTypeChanged(val);
-                },
+                  },
+                  onValueChanged: (val) {
+                    if (val != null) _onOrderTypeChanged(val);
+                  },
+                ),
+              ),
+            )
+          else if (_availableOrderTypes.length == 1)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: IOSColors.systemFill.resolveFrom(context),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  (_availableOrderTypes.first['name'] as String?) ?? 'Order',
+                  style: IOSText.caption1.copyWith(fontWeight: FontWeight.w600),
+                ),
               ),
             ),
-          ),
 
           // Table Selector (dynamically shown when order type requires table)
           if (_requiresTable) ...[

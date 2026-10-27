@@ -34,7 +34,7 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
   void initState() {
     super.initState();
     PosSyncService.instance.fetchCurrentShift();
-    _cashController.text = '200000';
+    _cashController.text = '';
   }
 
   @override
