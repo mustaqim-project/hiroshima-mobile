@@ -31,12 +31,19 @@ void main() {
         changeAmount: 100,
       );
 
+      expect(receipt, contains('H I R O S H I M A'));
+      expect(receipt, contains('JAPANESE STREET FOOD & SUSHI'));
+      expect(receipt, contains('Cabang    : Hiroshima Pusat'));
+      expect(receipt, contains('No. Struk : HRS01-POS-001'));
+      expect(receipt, contains('Tipe      : Dine In'));
       expect(receipt, contains('RANGKAP 1 - CUSTOMER'));
       expect(receipt, contains('TOTAL BAYAR'));
       expect(receipt, contains('Pajak (PB1)'));
       expect(receipt, contains('Tunai'));
       expect(receipt, contains('Kembalian'));
       expect(receipt, contains('Meja 05'));
+      expect(receipt, contains('Terima kasih atas kunjungan Anda'));
+      expect(receipt, contains('@hiroshima.id'));
     });
 
     test('Rangkap 2 (Dapur) omits all prices and payment information', () {

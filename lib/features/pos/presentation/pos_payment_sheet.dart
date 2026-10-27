@@ -12,6 +12,7 @@ import '../../../../core/sync/pos_sync_service.dart';
 import '../../../../core/time/trusted_clock.dart';
 import '../../../../core/theme/ios_tokens.dart';
 import '../../../../core/theme/ios_components.dart';
+import 'pos_receipt_dialog.dart';
 
 class PosPaymentSheet extends StatefulWidget {
   const PosPaymentSheet({
@@ -223,42 +224,58 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
     Navigator.pop(context);
     widget.onPaymentSuccess();
 
-    // Show Success Dialog
+    // Show Apple HIG Digital Bill & Thermal Receipt Dialog
     showCupertinoDialog(
       context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(CupertinoIcons.checkmark_circle_fill, color: IOSColors.accentLight, size: 22),
-            const SizedBox(width: 8),
-            const Text('Pembayaran Berhasil'),
-          ],
-        ),
-        content: Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('No. Order: $orderNo', style: const TextStyle(fontWeight: FontWeight.bold)),
-              Text('Metode   : ${_selectedPaymentMethod['name'] ?? "Tunai"}'),
-              Text('Total    : ${_currency.format(calc.totalAmount)}'),
-              if (_isCash && _changeAmount > 0)
-                Text('Kembalian: ${_currency.format(_changeAmount)}', style: const TextStyle(fontWeight: FontWeight.bold, color: IOSColors.accentLight)),
-              const SizedBox(height: 8),
-              if (printNotice.isNotEmpty)
-                Text(printNotice, style: const TextStyle(fontSize: 12, color: CupertinoColors.systemGrey)),
+      barrierDismissible: false,
+      builder: (ctx) => PosReceiptDialog(
+        branchName: branchName,
+        branchAddress: branchAddress,
+        branchPhone: branchPhone,
+        orderNo: orderNo,
+        tableNo: widget.tableNo,
+        orderTypeName: widget.orderType,
+        cashierName: cashierName,
+        transactionTime: transactionTime,
+        items: widget.cart,
+        subtotal: calc.subtotal,
+        totalDiscount: calc.totalDiscount,
+        serviceChargeAmount: calc.serviceChargeAmount,
+        taxAmount: calc.taxAmount,
+        roundingAmount: calc.roundingAmount,
+        totalAmount: calc.totalAmount,
+        paymentMethodName: _selectedPaymentMethod['name'] ?? 'Tunai (Cash)',
+        paidAmount: _isCash ? _cashGiven : calc.totalAmount,
+        changeAmount: _changeAmount > 0 ? _changeAmount : 0,
+        printNotice: printNotice.isNotEmpty ? printNotice : null,
+        onReprint: () async {
+          await ThermalPrinterService.instance.printOrderDualCopy(
+            branchName: branchName,
+            branchAddress: branchAddress,
+            branchPhone: branchPhone,
+            orderNo: orderNo,
+            tableNo: widget.tableNo,
+            orderTypeName: widget.orderType,
+            cashierName: cashierName,
+            transactionTime: transactionTime,
+            items: widget.cart,
+            subtotal: calc.subtotal,
+            totalDiscount: calc.totalDiscount,
+            serviceChargeAmount: calc.serviceChargeAmount,
+            taxAmount: calc.taxAmount,
+            roundingAmount: calc.roundingAmount,
+            totalAmount: calc.totalAmount,
+            payments: [
+              {
+                'method': _selectedPaymentMethod['name'] ?? 'Tunai',
+                'amount': _isCash ? _cashGiven : calc.totalAmount,
+              }
             ],
-          ),
-        ),
-        actions: [
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            child: const Text('Selesai'),
-            onPressed: () => Navigator.pop(ctx),
-          ),
-        ],
+            changeAmount: _changeAmount > 0 ? _changeAmount : 0,
+            openDrawer: _isCash,
+          );
+        },
+        onClose: () => Navigator.pop(ctx),
       ),
     );
   }
