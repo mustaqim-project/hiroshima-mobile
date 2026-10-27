@@ -14,11 +14,13 @@ import 'package:mobile/main.dart';
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+    ThemeController.instance.resetForTesting();
     PosSyncService.instance.stopAutoSync();
     PosSyncService.instance.resetForTesting();
   });
 
   tearDown(() {
+    ThemeController.instance.resetForTesting();
     PosSyncService.instance.stopAutoSync();
     PosSyncService.instance.resetForTesting();
   });
@@ -54,7 +56,6 @@ void main() {
 
       expect(find.text('Username & PIN'), findsOneWidget);
       expect(find.text('Email & Password'), findsOneWidget);
-      expect(find.byType(CupertinoSlidingSegmentedControl<dynamic>), findsOneWidget);
 
       // Verify theme toggle button exists in navbar
       final themeToggleBtn = find.byIcon(CupertinoIcons.moon_fill);

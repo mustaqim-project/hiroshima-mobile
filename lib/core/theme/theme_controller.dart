@@ -12,13 +12,20 @@ class ThemeController extends ChangeNotifier {
 
   ThemeMode _themeMode = ThemeMode.system;
   ThemeMode get themeMode => _themeMode;
+  bool _hasManualOverride = false;
 
   bool get isDarkMode => _themeMode == ThemeMode.dark;
+
+  void resetForTesting() {
+    _themeMode = ThemeMode.system;
+    _hasManualOverride = false;
+  }
 
   Future<void> _loadSavedTheme() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final modeStr = prefs.getString(_prefKeyThemeMode);
+      if (_hasManualOverride) return;
       if (modeStr == 'light') {
         _themeMode = ThemeMode.light;
       } else if (modeStr == 'dark') {
@@ -31,6 +38,7 @@ class ThemeController extends ChangeNotifier {
   }
 
   Future<void> setThemeMode(ThemeMode mode) async {
+    _hasManualOverride = true;
     _themeMode = mode;
     notifyListeners();
     try {

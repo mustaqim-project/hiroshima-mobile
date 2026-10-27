@@ -1775,24 +1775,39 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
             child: Row(
               children: [
-                Text('Pesanan Berjalan', style: IOSText.headline.copyWith(fontWeight: FontWeight.w800)),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: IOSColors.accent.resolveFrom(context).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    '${_cart.length}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: IOSColors.accent.resolveFrom(context),
-                    ),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          'Pesanan Berjalan',
+                          style: IOSText.headline.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: IOSColors.label.resolveFrom(context),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: IOSColors.accent.resolveFrom(context).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '${_cart.length}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: IOSColors.accent.resolveFrom(context),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const Spacer(),
                 if (_cart.isNotEmpty)
                   CupertinoButton(
                     padding: const EdgeInsets.only(right: 8),
