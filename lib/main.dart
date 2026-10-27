@@ -2,6 +2,7 @@
 // Apple HIG iOS-Look Entry Point for Hiroshima POS (iOS + Android)
 // World-class Million Dollar Architecture with Production Server, Dual Theme, Preload, and Offline Cache
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -87,7 +88,21 @@ class HiroshimaPosApp extends StatelessWidget {
             
             return AnnotatedRegion<SystemUiOverlayStyle>(
               value: IOSSystemUi.styleFor(effectiveDark ? Brightness.dark : Brightness.light),
-              child: child ?? const SizedBox.shrink(),
+              child: CupertinoTheme(
+                data: buildIOSTheme(brightness: effectiveDark ? Brightness.dark : Brightness.light),
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: DefaultTextStyle(
+                    style: TextStyle(
+                      fontFamily: IOSPlatform.fontFamily,
+                      fontFamilyFallback: IOSPlatform.fontFamilyFallback,
+                      decoration: TextDecoration.none,
+                      color: effectiveDark ? CupertinoColors.white : CupertinoColors.black,
+                    ),
+                    child: child ?? const SizedBox.shrink(),
+                  ),
+                ),
+              ),
             );
           },
 

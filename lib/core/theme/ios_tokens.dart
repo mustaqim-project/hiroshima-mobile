@@ -105,6 +105,7 @@ abstract final class IOSText {
         fontWeight: weight,
         letterSpacing: IOSPlatform.trackingFor(size, appleTracking),
         height: height,
+        decoration: TextDecoration.none,
       );
 
   static TextStyle get largeTitle => _s(34, FontWeight.w700, 0.4);

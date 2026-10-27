@@ -382,6 +382,7 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
                   fontSize: 34,
                   fontWeight: FontWeight.w900,
                   letterSpacing: -1,
+                  decoration: TextDecoration.none,
                 ),
               ),
             ),
@@ -390,10 +391,10 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
         const SizedBox(height: IOSSpacing.sm),
         Text(
           PosSyncService.instance.appName,
-          style: const TextStyle(
-            fontSize: 22,
+          style: IOSText.title2.copyWith(
             fontWeight: FontWeight.w800,
             letterSpacing: -0.5,
+            color: CupertinoColors.label.resolveFrom(context),
           ),
         ),
         const SizedBox(height: 2),
