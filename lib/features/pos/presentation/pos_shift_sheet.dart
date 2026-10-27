@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../../../core/sync/pos_sync_service.dart';
 import '../../../core/theme/ios_components.dart';
 import '../../../core/theme/ios_tokens.dart';
+import 'pos_close_shift_report_dialog.dart';
 
 class PosShiftSheet extends StatefulWidget {
   const PosShiftSheet({super.key});
@@ -91,11 +92,36 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
 
     if (res['success'] == true) {
       HapticFeedback.mediumImpact();
-      Navigator.pop(context);
+      final report = (res['report'] as Map<String, dynamic>?) ?? {};
+      final rootNav = Navigator.of(context);
+      rootNav.pop();
+      PosCloseShiftReportDialog.show(rootNav.context, report: report);
     } else {
       HapticFeedback.heavyImpact();
       setState(() {
         _errorMessage = res['message'] as String? ?? 'Gagal menutup shift.';
+      });
+    }
+  }
+
+  Future<void> _handleViewLastReport() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    final report = await PosSyncService.instance.fetchCurrentShiftReport();
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    if (report != null) {
+      final rootNav = Navigator.of(context);
+      rootNav.pop();
+      PosCloseShiftReportDialog.show(rootNav.context, report: report, autoPrint: false);
+    } else {
+      setState(() {
+        _errorMessage = 'Tidak ditemukan data laporan shift sebelumnya.';
       });
     }
   }
@@ -305,6 +331,17 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
                   expanded: true,
                   isLoading: _isLoading,
                   onPressed: _isLoading ? null : _handleOpenShift,
+                ),
+                const SizedBox(height: 8),
+
+                IOSButton(
+                  label: 'Lihat Laporan Shift Terakhir',
+                  icon: CupertinoIcons.doc_text,
+                  variant: IOSButtonVariant.plain,
+                  size: IOSButtonSize.small,
+                  expanded: true,
+                  isLoading: false,
+                  onPressed: _isLoading ? null : _handleViewLastReport,
                 ),
               ] else ...[
                 // CLOSE SHIFT FLOW

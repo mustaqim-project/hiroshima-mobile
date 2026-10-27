@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:mobile/core/sync/pos_sync_service.dart';
-import 'package:mobile/core/theme/ios_tokens.dart';
 import 'package:mobile/core/theme/theme_controller.dart';
 import 'package:mobile/main.dart';
 

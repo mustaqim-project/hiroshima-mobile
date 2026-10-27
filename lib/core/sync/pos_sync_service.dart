@@ -522,8 +522,89 @@ class PosSyncService extends ChangeNotifier {
           'actual_cash': actualCash,
           'status': 'closed',
         },
+        'report': generateLocalReport(old, actualCash),
       };
     }
+  }
+
+  /// Generate structured report map for offline shift closures
+  Map<String, dynamic> generateLocalReport(Map<String, dynamic>? shiftData, int actualCash) {
+    final startCash = (shiftData?['starting_cash'] as num?)?.toInt() ?? 0;
+    final expCash = (shiftData?['expected_cash'] as num?)?.toInt() ?? startCash;
+    final diff = actualCash - expCash;
+    final user = currentUser;
+
+    return {
+      'shift_info': {
+        'company_name': appName,
+        'branch_name': _branch['name'] ?? 'Hiroshima Japanese Street Food',
+        'branch_code': _branch['code'] ?? 'HRS',
+        'cashier_name': user?['name'] ?? user?['username'] ?? 'Kasir',
+        'cashier_username': user?['username'] ?? 'kasir',
+        'shift_id': shiftData?['id'] ?? DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        'opened_at': shiftData?['opened_at'] ?? DateTime.now().toIso8601String(),
+        'closed_at': DateTime.now().toIso8601String(),
+        'printed_at': DateTime.now().toIso8601String(),
+        'close_type': 'manual',
+        'status': 'closed',
+      },
+      'menu_summary': {
+        'items': <Map<String, dynamic>>[],
+        'total': {
+          'total_qty': 0,
+          'total_sales': 0,
+        },
+      },
+      'transaction_summary': {
+        'completed_transaction_count': 0,
+        'gross_sales': 0,
+        'total_discount': 0,
+        'discount_breakdown': {'promo': 0, 'voucher': 0, 'loyalty': 0, 'manual': 0},
+        'tax_amount': 0,
+        'service_charge_amount': 0,
+        'rounding_amount': 0,
+        'net_sales': 0,
+        'payments_by_method': <Map<String, dynamic>>[],
+        'cash_reconciliation': {
+          'starting_cash': startCash,
+          'expected_cash': expCash,
+          'actual_cash': actualCash,
+          'cash_difference': diff,
+        },
+      },
+    };
+  }
+
+  /// Fetch Close Shift Report for specified shift or latest closed shift
+  Future<Map<String, dynamic>?> fetchCurrentShiftReport({int? shiftId}) async {
+    try {
+      final targetBranchId = _branch['id'] ?? currentUser?['branch_id'];
+      String url = shiftId != null
+          ? '$baseUrl/shifts/$shiftId/report'
+          : '$baseUrl/shifts/current/report';
+      if (targetBranchId != null) {
+        url += '?branch_id=$targetBranchId';
+      }
+      final uri = Uri.parse(url);
+      final headers = <String, String>{
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $authToken',
+      };
+      if (targetBranchId != null) {
+        headers['X-Branch-Id'] = targetBranchId.toString();
+      }
+
+      final response = await http.get(uri, headers: headers).timeout(const Duration(seconds: 5));
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        if (body['success'] == true) {
+          return body['report'] as Map<String, dynamic>?;
+        }
+      }
+    } catch (e) {
+      debugPrint('[PosSyncService] Error fetching shift report: $e');
+    }
+    return null;
   }
 
   // ───────────────────────── Hold Bill API ─────────────────────────

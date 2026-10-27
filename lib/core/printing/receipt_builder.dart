@@ -159,4 +159,143 @@ class ReceiptBuilder {
 
     return buffer.toString();
   }
+
+  /// Close Shift Report (Laporan Penjualan & Rekonsiliasi Kas Shift)
+  /// Complies with Section 5 of Specification:
+  /// A. Rekap Penjualan per Menu (No, Menu, Qty, Total Penjualan, TOTAL Baris Bawah)
+  /// B. Ringkasan Transaksi (Tx Selesai, Kotor, Diskon, Pajak/Service, Bersih, Breakdown Metode, Kas Laci)
+  /// C. Informasi Shift (Usaha, Outlet, Kasir, ID, Buka, Tutup, Cetak, Jenis Tutup)
+  static String buildCloseShiftReceipt({
+    required Map<String, dynamic> report,
+  }) {
+    final buffer = StringBuffer();
+    final shiftInfo = (report['shift_info'] as Map<String, dynamic>?) ?? {};
+    final menuSummary = (report['menu_summary'] as Map<String, dynamic>?) ?? {};
+    final menuItems = (menuSummary['items'] as List<dynamic>?) ?? [];
+    final menuTotal = (menuSummary['total'] as Map<String, dynamic>?) ?? {};
+    final txSummary = (report['transaction_summary'] as Map<String, dynamic>?) ?? {};
+    final payments = (txSummary['payments_by_method'] as List<dynamic>?) ?? [];
+    final cashRec = (txSummary['cash_reconciliation'] as Map<String, dynamic>?) ?? {};
+
+    final company = (shiftInfo['company_name'] as String?) ?? 'Hiroshima Japanese Street Food';
+    final branchName = (shiftInfo['branch_name'] as String?) ?? 'Hiroshima';
+    final cashier = (shiftInfo['cashier_name'] as String?) ?? (shiftInfo['cashier_username'] as String?) ?? 'Kasir';
+    final shiftId = shiftInfo['shift_id']?.toString() ?? '-';
+    final closeType = (shiftInfo['close_type'] ?? 'manual') == 'auto' ? 'OTOMATIS (23 JAM)' : 'MANUAL (KASIR)';
+
+    DateTime? openedAt = shiftInfo['opened_at'] != null ? DateTime.tryParse(shiftInfo['opened_at'].toString()) : null;
+    DateTime? closedAt = shiftInfo['closed_at'] != null ? DateTime.tryParse(shiftInfo['closed_at'].toString()) : null;
+    DateTime printedAt = shiftInfo['printed_at'] != null ? (DateTime.tryParse(shiftInfo['printed_at'].toString()) ?? DateTime.now()) : DateTime.now();
+
+    final df = DateFormat('dd/MM/yyyy HH:mm');
+
+    buffer.writeln('================================');
+    buffer.writeln('   $company   ');
+    buffer.writeln('   Outlet: $branchName   ');
+    buffer.writeln('================================');
+    buffer.writeln('*** LAPORAN TUTUP SHIFT (CLOSE) ***');
+    buffer.writeln('--------------------------------');
+    buffer.writeln('Shift ID   : #$shiftId');
+    buffer.writeln('Kasir      : $cashier');
+    buffer.writeln('Waktu Buka : ${openedAt != null ? df.format(openedAt) : "-"} WIB');
+    buffer.writeln('Waktu Tutup: ${closedAt != null ? df.format(closedAt) : "-"} WIB');
+    buffer.writeln('Waktu Cetak: ${df.format(printedAt)} WIB');
+    buffer.writeln('Tipe Tutup : $closeType');
+    buffer.writeln('================================');
+    buffer.writeln('    REKAP PENJUALAN PER MENU    ');
+    buffer.writeln('--------------------------------');
+
+    if (menuItems.isEmpty) {
+      buffer.writeln(' (Tidak ada transaksi selesai)  ');
+    } else {
+      for (final item in menuItems) {
+        final no = item['no'] ?? '';
+        final menu = (item['menu'] as String?) ?? 'Item';
+        final qty = (item['total_qty'] as num?)?.toInt() ?? 0;
+        final sales = (item['total_sales'] as num?)?.toInt() ?? 0;
+        buffer.writeln('$no. $menu');
+        buffer.writeln('    ${qty}x ${''.padRight(4)} ${_currencyFormat.format(sales).padLeft(16)}');
+      }
+    }
+
+    buffer.writeln('--------------------------------');
+    final totalQty = (menuTotal['total_qty'] as num?)?.toInt() ?? 0;
+    final totalSales = (menuTotal['total_sales'] as num?)?.toInt() ?? 0;
+    buffer.writeln('TOTAL MENU : $totalQty item');
+    buffer.writeln('TOTAL NILAI: ${_currencyFormat.format(totalSales).padLeft(16)}');
+    buffer.writeln('================================');
+    buffer.writeln('      RINGKASAN TRANSAKSI       ');
+    buffer.writeln('--------------------------------');
+
+    final txCount = txSummary['completed_transaction_count'] ?? 0;
+    final gross = (txSummary['gross_sales'] as num?)?.toInt() ?? 0;
+    final discount = (txSummary['total_discount'] as num?)?.toInt() ?? 0;
+    final service = (txSummary['service_charge_amount'] as num?)?.toInt() ?? 0;
+    final tax = (txSummary['tax_amount'] as num?)?.toInt() ?? 0;
+    final rounding = (txSummary['rounding_amount'] as num?)?.toInt() ?? 0;
+    final netSales = (txSummary['net_sales'] as num?)?.toInt() ?? 0;
+
+    buffer.writeln('Trx Selesai   : $txCount');
+    buffer.writeln('Penj. Kotor   : ${_currencyFormat.format(gross).padLeft(16)}');
+    if (discount > 0) {
+      buffer.writeln('Total Diskon  : -${_currencyFormat.format(discount).padLeft(15)}');
+    }
+    if (service > 0) {
+      buffer.writeln('Service Charge: ${_currencyFormat.format(service).padLeft(16)}');
+    }
+    if (tax > 0) {
+      buffer.writeln('Pajak (PB1)   : ${_currencyFormat.format(tax).padLeft(16)}');
+    }
+    if (rounding != 0) {
+      final sign = rounding > 0 ? '+' : '-';
+      buffer.writeln('Pembulatan    : $sign${_currencyFormat.format(rounding.abs()).padLeft(15)}');
+    }
+    buffer.writeln('--------------------------------');
+    buffer.writeln('PENJ. BERSIH  : ${_currencyFormat.format(netSales).padLeft(16)}');
+    buffer.writeln('================================');
+    buffer.writeln('       METODE PEMBAYARAN        ');
+    buffer.writeln('--------------------------------');
+
+    if (payments.isEmpty) {
+      buffer.writeln('    (Tidak ada pembayaran)      ');
+    } else {
+      for (final p in payments) {
+        final name = (p['name'] as String?) ?? 'Metode';
+        final pCount = p['tx_count'] ?? 0;
+        final pTotal = (p['total_amount'] as num?)?.toInt() ?? 0;
+        buffer.writeln('$name (${pCount}x)');
+        buffer.writeln('    Total     : ${_currencyFormat.format(pTotal).padLeft(16)}');
+      }
+    }
+
+    buffer.writeln('================================');
+    buffer.writeln('      REKONSILIASI KAS LACI     ');
+    buffer.writeln('--------------------------------');
+
+    final startCash = (cashRec['starting_cash'] as num?)?.toInt() ?? 0;
+    final expCash = (cashRec['expected_cash'] as num?)?.toInt() ?? 0;
+    final actCash = (cashRec['actual_cash'] as num?)?.toInt();
+    final diff = (cashRec['cash_difference'] as num?)?.toInt();
+
+    buffer.writeln('Modal Kas Awal : ${_currencyFormat.format(startCash).padLeft(15)}');
+    buffer.writeln('Ekspektasi Kas : ${_currencyFormat.format(expCash).padLeft(15)}');
+    if (actCash != null) {
+      buffer.writeln('Kas Fisik Akt. : ${_currencyFormat.format(actCash).padLeft(15)}');
+    }
+    if (diff != null) {
+      final diffLabel = diff == 0 ? 'Pas' : (diff < 0 ? 'Kurang' : 'Lebih');
+      final sign = diff > 0 ? '+' : (diff < 0 ? '-' : '');
+      buffer.writeln('Selisih Kas    : $sign${_currencyFormat.format(diff.abs()).padLeft(12)} ($diffLabel)');
+    }
+
+    buffer.writeln('================================');
+    buffer.writeln('\n');
+    buffer.writeln('Kasir Bertugas,       Supervisor,\n\n\n');
+    buffer.writeln('( $cashier )        ( __________ )\n');
+    buffer.writeln('================================');
+    buffer.writeln('\n\n\n[CUT]\n');
+
+    return buffer.toString();
+  }
 }
+
