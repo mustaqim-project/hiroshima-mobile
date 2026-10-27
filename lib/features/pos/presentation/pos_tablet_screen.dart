@@ -212,23 +212,55 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
     );
   }
 
-  void _onOrderTypeChanged(int newTypeId) {
+  int _getBaseProductPrice(dynamic productId) {
+    final prods = PosSyncService.instance.products;
+    final match = prods.firstWhere(
+      (p) => p['id'] == productId,
+      orElse: () => {},
+    );
+    if (match.isNotEmpty && match['price'] != null) {
+      return (match['price'] as num).toInt();
+    }
+    return 0;
+  }
+
+  void _onOrderTypeChanged(int newTypeId, {StateSetter? modalSetState}) {
     HapticFeedback.selectionClick();
     setState(() {
       _selectedOrderTypeIdState = newTypeId;
       if (!_requiresTable) {
         _selectedTableNo = null;
       }
-      // Recalculate price in active cart items to match new order type
+      // Recalculate price in active cart items to match new order type preserving modifiers
       for (final item in _cart) {
         final pId = item['id'];
-        item['price'] = PosSyncService.instance.getProductPrice(
-          pId,
-          newTypeId,
-          defaultPrice: item['price'] as int,
+        final variantId = item['variant_id'];
+        final modifiers = (item['modifiers'] as List<dynamic>?) ?? [];
+        final modExtra = modifiers.fold<int>(
+          0,
+          (sum, m) => sum + ((m['price'] ?? m['unit_price'] ?? 0) as num).toInt(),
         );
+        final basePrice = variantId != null
+            ? PosSyncService.instance.getProductPrice(
+                variantId,
+                newTypeId,
+                defaultPrice: PosSyncService.instance.getProductPrice(
+                  pId,
+                  newTypeId,
+                  defaultPrice: _getBaseProductPrice(pId),
+                ),
+              )
+            : PosSyncService.instance.getProductPrice(
+                pId,
+                newTypeId,
+                defaultPrice: _getBaseProductPrice(pId),
+              );
+        item['price'] = basePrice + modExtra;
       }
     });
+    if (modalSetState != null) {
+      modalSetState(() {});
+    }
   }
 
   void _addToCart(
@@ -278,7 +310,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
     HapticFeedback.lightImpact();
   }
 
-  void _updateQty(int index, int delta) {
+  void _updateQty(int index, int delta, {StateSetter? modalSetState}) {
     setState(() {
       final newQty = (_cart[index]['qty'] as int) + delta;
       if (newQty <= 0) {
@@ -287,6 +319,9 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
         _cart[index]['qty'] = newQty;
       }
     });
+    if (modalSetState != null) {
+      modalSetState(() {});
+    }
     HapticFeedback.selectionClick();
   }
 
@@ -308,7 +343,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
     }
   }
 
-  void _openDiscountDialog() {
+  void _openDiscountDialog({StateSetter? modalSetState}) {
     final textController = TextEditingController();
     showCupertinoDialog(
       context: context,
@@ -361,6 +396,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                   reason: 'Diskon melebihi ambang batas (${_currency.format(discount)})',
                   onAuthorized: () {
                     setState(() => _manualDiscount = discount);
+                    if (modalSetState != null) modalSetState(() {});
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('Diskon ${_currency.format(discount)} berhasil diotorisasi PIN.')),
                     );
@@ -368,6 +404,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                 );
               } else {
                 setState(() => _manualDiscount = discount);
+                if (modalSetState != null) modalSetState(() {});
               }
             },
           ),
@@ -505,7 +542,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
     );
   }
 
-  void _handleHoldBill() {
+  void _handleHoldBill({bool dismissCurrentModal = false}) {
     if (_cart.isEmpty) return;
 
     if (!PosSyncService.instance.hasActiveShift) {
@@ -639,6 +676,9 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                   _manualDiscount = 0;
                   _selectedTableNo = null;
                 });
+                if (dismissCurrentModal && mounted) {
+                  Navigator.pop(context);
+                }
               } else {
                 HapticFeedback.heavyImpact();
                 if (mounted) {
@@ -908,7 +948,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
     );
   }
 
-  void _openTablePicker() {
+  void _openTablePicker({StateSetter? modalSetState}) {
     final tables = PosSyncService.instance.tables;
     showCupertinoModalPopup(
       context: context,
@@ -945,6 +985,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                           borderRadius: BorderRadius.circular(12),
                           onPressed: () {
                             setState(() => _selectedTableNo = tNo);
+                            if (modalSetState != null) modalSetState(() {});
                             Navigator.pop(ctx);
                           },
                           child: Text(
@@ -1748,12 +1789,134 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
     );
   }
 
+  // ───────────────────────── Dynamic Order Type Capsule Selector ─────────────────────────
+  Widget _buildOrderTypeSelector({StateSetter? modalSetState}) {
+    final list = _availableOrderTypes;
+    if (list.length < 2) {
+      if (list.length == 1) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: IOSColors.systemFill.resolveFrom(context),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              (list.first['name'] as String?) ?? 'Order',
+              style: IOSText.caption1.copyWith(fontWeight: FontWeight.w600),
+            ),
+          ),
+        );
+      }
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: SizedBox(
+        height: 38,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          itemCount: list.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 8),
+          itemBuilder: (ctx, i) {
+            final ot = list[i];
+            final id = (ot['id'] as num).toInt();
+            final name = (ot['name'] as String?) ?? 'Order';
+            final isSelected = _selectedOrderTypeId == id;
+
+            IconData icon = CupertinoIcons.tag_fill;
+            final lower = name.toLowerCase();
+            if (lower.contains('dine') || lower.contains('meja')) {
+              icon = CupertinoIcons.table_badge_more;
+            } else if (lower.contains('take') || lower.contains('bungkus')) {
+              icon = CupertinoIcons.bag_fill;
+            } else if (lower.contains('shopee')) {
+              icon = CupertinoIcons.flame_fill;
+            } else if (lower.contains('go') || lower.contains('gofood')) {
+              icon = CupertinoIcons.bolt_fill;
+            } else if (lower.contains('grab')) {
+              icon = CupertinoIcons.car_fill;
+            } else if (lower.contains('delivery') || lower.contains('antar')) {
+              icon = CupertinoIcons.paperplane_fill;
+            }
+
+            return CupertinoButton(
+              padding: EdgeInsets.zero,
+              pressedOpacity: 0.75,
+              onPressed: () {
+                _onOrderTypeChanged(id, modalSetState: modalSetState);
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOutCubic,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? IOSColors.accent.resolveFrom(context)
+                      : CupertinoColors.tertiarySystemFill.resolveFrom(context),
+                  borderRadius: BorderRadius.circular(19),
+                  border: isSelected
+                      ? null
+                      : Border.all(
+                          color: IOSColors.separator.resolveFrom(context).withValues(alpha: 0.25),
+                          width: 0.5,
+                        ),
+                  boxShadow: isSelected
+                      ? [
+                          BoxShadow(
+                            color: IOSColors.accent.resolveFrom(context).withValues(alpha: 0.32),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      icon,
+                      size: 14,
+                      color: isSelected
+                          ? CupertinoColors.white
+                          : CupertinoColors.secondaryLabel.resolveFrom(context),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      name,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                        color: isSelected
+                            ? CupertinoColors.white
+                            : CupertinoColors.label.resolveFrom(context),
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   // ───────────────────────── Cart / Order Summary Panel ─────────────────────────
   Widget _buildCartPanel(
     OrderCalculationResult calc, {
     bool isModalSheet = false,
+    StateSetter? modalSetState,
     VoidCallback? onClose,
   }) {
+    final effectiveCalc = isModalSheet ? _calculation : calc;
+
     return Container(
       color: IOSColors.secondaryGroupedBackground.resolveFrom(context),
       child: Column(
@@ -1813,10 +1976,16 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                   CupertinoButton(
                     padding: const EdgeInsets.only(right: 8),
                     onPressed: () {
+                      HapticFeedback.mediumImpact();
                       setState(() {
                         _cart.clear();
                         _manualDiscount = 0;
+                        _selectedTableNo = null;
                       });
+                      if (modalSetState != null) modalSetState(() {});
+                      if (isModalSheet && onClose != null) {
+                        onClose();
+                      }
                     },
                     child: Text('Kosongkan', style: IOSText.footnote.copyWith(color: IOSColors.destructive.resolveFrom(context))),
                   ),
@@ -1841,95 +2010,49 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
             ),
           ),
 
-          // Order Types Segmented Control (100% Dynamic from Backend API, Zero Hardcode)
-          if (_availableOrderTypes.length >= 2)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: SizedBox(
-                width: double.infinity,
-                child: CupertinoSlidingSegmentedControl<int>(
-                  groupValue: _selectedOrderTypeId,
-                  thumbColor: CupertinoDynamicColor.withBrightness(
-                    color: CupertinoColors.white,
-                    darkColor: const Color(0xFF636366),
-                  ).resolveFrom(context),
-                  backgroundColor: CupertinoColors.tertiarySystemFill.resolveFrom(context),
-                  children: {
-                    for (final ot in _availableOrderTypes)
-                      (ot['id'] as num).toInt(): Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            (ot['name'] as String?) ?? 'Order',
-                            style: IOSText.caption1.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: CupertinoColors.label.resolveFrom(context),
-                            ),
-                          ),
-                        ),
-                      ),
-                  },
-                  onValueChanged: (val) {
-                    if (val != null) _onOrderTypeChanged(val);
-                  },
-                ),
-              ),
-            )
-          else if (_availableOrderTypes.length == 1)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: IOSColors.systemFill.resolveFrom(context),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  (_availableOrderTypes.first['name'] as String?) ?? 'Order',
-                  style: IOSText.caption1.copyWith(fontWeight: FontWeight.w600),
-                ),
-              ),
-            ),
+          // Dynamic Animated Order Types Capsule Selector
+          _buildOrderTypeSelector(modalSetState: modalSetState),
 
           // Table Selector (dynamically shown when order type requires table)
-          if (_requiresTable) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
-              child: CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: _openTablePicker,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: IOSColors.groupedBackground.resolveFrom(context),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: IOSColors.separator.resolveFrom(context).withValues(alpha: 0.4),
-                      width: 0.5,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(CupertinoIcons.square_list, size: 16, color: IOSColors.accentLight),
-                      const SizedBox(width: 8),
-                      Text(
-                        _selectedTableNo != null ? 'Nomor Meja: $_selectedTableNo' : 'Pilih Nomor Meja',
-                        style: IOSText.subhead.copyWith(
-                          fontWeight: _selectedTableNo != null ? FontWeight.bold : FontWeight.normal,
-                          color: IOSColors.label.resolveFrom(context),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            child: _requiresTable
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                    child: CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      onPressed: () => _openTablePicker(modalSetState: modalSetState),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: IOSColors.groupedBackground.resolveFrom(context),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: IOSColors.separator.resolveFrom(context).withValues(alpha: 0.4),
+                            width: 0.5,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(CupertinoIcons.square_list, size: 16, color: IOSColors.accentLight),
+                            const SizedBox(width: 8),
+                            Text(
+                              _selectedTableNo != null ? 'Nomor Meja: $_selectedTableNo' : 'Pilih Nomor Meja',
+                              style: IOSText.subhead.copyWith(
+                                fontWeight: _selectedTableNo != null ? FontWeight.bold : FontWeight.normal,
+                                color: IOSColors.label.resolveFrom(context),
+                              ),
+                            ),
+                            const Spacer(),
+                            const Icon(CupertinoIcons.chevron_forward, size: 14, color: CupertinoColors.systemGrey),
+                          ],
                         ),
                       ),
-                      const Spacer(),
-                      const Icon(CupertinoIcons.chevron_forward, size: 14, color: CupertinoColors.systemGrey),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
           Container(
             height: 0.5,
             color: IOSColors.separator.resolveFrom(context).withValues(alpha: 0.35),
@@ -2015,7 +2138,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                                 CupertinoButton(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                   minimumSize: const Size(32, 32),
-                                  onPressed: () => _updateQty(i, -1),
+                                  onPressed: () => _updateQty(i, -1, modalSetState: modalSetState),
                                   child: const Icon(CupertinoIcons.minus, size: 14),
                                 ),
                                 Text(
@@ -2025,7 +2148,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                                 CupertinoButton(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                   minimumSize: const Size(32, 32),
-                                  onPressed: () => _updateQty(i, 1),
+                                  onPressed: () => _updateQty(i, 1, modalSetState: modalSetState),
                                   child: const Icon(CupertinoIcons.plus, size: 14),
                                 ),
                               ],
@@ -2066,7 +2189,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('Subtotal', style: IOSText.footnote),
-                    Text(_currency.format(calc.subtotal), style: IOSText.tabular(IOSText.footnote).copyWith(fontWeight: FontWeight.w600)),
+                    Text(_currency.format(effectiveCalc.subtotal), style: IOSText.tabular(IOSText.footnote).copyWith(fontWeight: FontWeight.w600)),
                   ],
                 ),
                 if (_manualDiscount > 0) ...[
@@ -2084,16 +2207,16 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('Pajak (PB1 11%)', style: IOSText.footnote),
-                    Text(_currency.format(calc.taxAmount), style: IOSText.tabular(IOSText.footnote)),
+                    Text(_currency.format(effectiveCalc.taxAmount), style: IOSText.tabular(IOSText.footnote)),
                   ],
                 ),
-                if (calc.roundingAmount != 0) ...[
+                if (effectiveCalc.roundingAmount != 0) ...[
                   const SizedBox(height: 4),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text('Pembulatan (Rp 100)', style: IOSText.footnote),
-                      Text('${calc.roundingAmount > 0 ? "+" : ""}${_currency.format(calc.roundingAmount)}', style: IOSText.tabular(IOSText.footnote)),
+                      Text('${effectiveCalc.roundingAmount > 0 ? "+" : ""}${_currency.format(effectiveCalc.roundingAmount)}', style: IOSText.tabular(IOSText.footnote)),
                     ],
                   ),
                 ],
@@ -2107,7 +2230,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                   children: [
                     Text('TOTAL BAYAR', style: IOSText.headline.copyWith(fontWeight: FontWeight.w800)),
                     Text(
-                      _currency.format(calc.totalAmount),
+                      _currency.format(effectiveCalc.totalAmount),
                       style: IOSText.tabular(IOSText.title2).copyWith(
                         fontWeight: FontWeight.w900,
                         color: IOSColors.accent.resolveFrom(context),
@@ -2127,7 +2250,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                         variant: IOSButtonVariant.tinted,
                         size: IOSButtonSize.small,
                         expanded: true,
-                        onPressed: _cart.isEmpty ? null : _handleHoldBill,
+                        onPressed: _cart.isEmpty ? null : () => _handleHoldBill(dismissCurrentModal: isModalSheet),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -2138,7 +2261,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                         variant: IOSButtonVariant.tinted,
                         size: IOSButtonSize.small,
                         expanded: true,
-                        onPressed: _cart.isEmpty ? null : _openDiscountDialog,
+                        onPressed: _cart.isEmpty ? null : () => _openDiscountDialog(modalSetState: modalSetState),
                       ),
                     ),
                   ],
@@ -2168,6 +2291,28 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
   Widget _buildPhoneBottomBar(OrderCalculationResult calc) {
     if (_cart.isEmpty) return const SizedBox.shrink();
 
+    void openCartModal() {
+      HapticFeedback.lightImpact();
+      showCupertinoModalPopup(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (modalCtx, modalSetState) => Container(
+            height: MediaQuery.sizeOf(context).height * 0.88,
+            decoration: BoxDecoration(
+              color: IOSColors.secondaryGroupedBackground.resolveFrom(context),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: _buildCartPanel(
+              _calculation,
+              isModalSheet: true,
+              modalSetState: modalSetState,
+              onClose: () => Navigator.pop(ctx),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
@@ -2183,28 +2328,32 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
       child: Row(
         children: [
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '${_cart.length} item • $_selectedOrderTypeName',
-                  style: IOSText.caption2,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    _currency.format(calc.totalAmount),
-                    style: IOSText.tabular(IOSText.headline).copyWith(
-                      fontWeight: FontWeight.w900,
-                      color: IOSColors.accent.resolveFrom(context),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: openCartModal,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${_cart.length} item • $_selectedOrderTypeName',
+                    style: IOSText.caption2,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      _currency.format(calc.totalAmount),
+                      style: IOSText.tabular(IOSText.headline).copyWith(
+                        fontWeight: FontWeight.w900,
+                        color: IOSColors.accent.resolveFrom(context),
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           const SizedBox(width: 8),
@@ -2212,23 +2361,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
             label: 'Bayar',
             icon: CupertinoIcons.cart_fill,
             variant: IOSButtonVariant.filled,
-            onPressed: () {
-              showCupertinoModalPopup(
-                context: context,
-                builder: (ctx) => Container(
-                  height: MediaQuery.sizeOf(context).height * 0.88,
-                  decoration: BoxDecoration(
-                    color: IOSColors.secondaryGroupedBackground.resolveFrom(context),
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                  ),
-                  child: _buildCartPanel(
-                    calc,
-                    isModalSheet: true,
-                    onClose: () => Navigator.pop(ctx),
-                  ),
-                ),
-              );
-            },
+            onPressed: openCartModal,
           ),
         ],
       ),
