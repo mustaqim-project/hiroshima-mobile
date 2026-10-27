@@ -313,9 +313,12 @@ class ThermalPrinterService extends ChangeNotifier {
       // 1. RANGKAP 1: STRUK CUSTOMER (Full Financial Breakdown)
       // ========================================================
       bytes.addAll(generator.reset());
+      bytes.addAll(await _generateLandscapeLogoBytes(generator));
+      bytes.addAll(generator.feed(1));
+
       bytes.addAll(generator.text(
         branchName.toUpperCase(),
-        styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size1, width: PosTextSize.size1),
+        styles: const PosStyles(align: PosAlign.center, bold: true),
       ));
       if (branchAddress.isNotEmpty) {
         bytes.addAll(generator.text(branchAddress, styles: const PosStyles(align: PosAlign.center)));
@@ -329,7 +332,7 @@ class ThermalPrinterService extends ChangeNotifier {
 
       bytes.addAll(generator.row([
         PosColumn(text: 'No. Struk', width: 4),
-        PosColumn(text: ': $orderNo', width: 8),
+        PosColumn(text: ': $orderNo', width: 8, styles: const PosStyles(bold: true)),
       ]));
       bytes.addAll(generator.row([
         PosColumn(text: 'Waktu', width: 4),
@@ -340,8 +343,8 @@ class ThermalPrinterService extends ChangeNotifier {
         PosColumn(text: ': $cashierName', width: 8),
       ]));
       bytes.addAll(generator.row([
-        PosColumn(text: 'Tipe', width: 4),
-        PosColumn(text: ': $orderTypeName', width: 8),
+        PosColumn(text: 'Order Type', width: 4),
+        PosColumn(text: ': $orderTypeName', width: 8, styles: const PosStyles(bold: true)),
       ]));
       if (tableNo != null && tableNo.isNotEmpty) {
         bytes.addAll(generator.row([
@@ -435,7 +438,8 @@ class ThermalPrinterService extends ChangeNotifier {
 
       bytes.addAll(generator.feed(1));
       bytes.addAll(generator.text('Terima kasih atas kunjungan Anda', styles: const PosStyles(align: PosAlign.center)));
-      bytes.addAll(generator.text('Selamat menikmati hidangan!', styles: const PosStyles(align: PosAlign.center)));
+      bytes.addAll(generator.text('Selamat menikmati hidangan kami!', styles: const PosStyles(align: PosAlign.center)));
+      bytes.addAll(generator.text('Instagram: @hiroshima.id', styles: const PosStyles(align: PosAlign.center, fontType: PosFontType.fontB)));
       bytes.addAll(generator.feed(2));
       bytes.addAll(generator.cut());
 
