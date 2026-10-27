@@ -319,8 +319,12 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
   }
 
   Widget _buildBrandHeader() {
-    final branchName = PosSyncService.instance.branch['name'] as String? ?? 'Hiroshima Japanese Street Food';
-    final branchCode = PosSyncService.instance.branch['code'] as String? ?? 'HRS-CKN';
+    final hasActiveBranch = PosSyncService.instance.branch.isNotEmpty &&
+        PosSyncService.instance.branch['name'] != null;
+    final branchName = hasActiveBranch
+        ? (PosSyncService.instance.branch['name'] as String? ?? '')
+        : PosSyncService.instance.appTagline;
+    final branchCode = hasActiveBranch ? (PosSyncService.instance.branch['code'] as String?) : null;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Column(
@@ -387,7 +391,7 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
             const SizedBox(width: 6),
             Flexible(
               child: Text(
-                '$branchName ($branchCode)',
+                branchCode != null ? '$branchName ($branchCode)' : branchName,
                 style: IOSText.footnote.copyWith(
                   color: CupertinoColors.secondaryLabel.resolveFrom(context),
                   fontWeight: FontWeight.w500,
@@ -479,40 +483,39 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
         ),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Cashier Profile Selector Pill
-          CupertinoButton(
-            padding: EdgeInsets.zero,
-            onPressed: _showCashierPicker,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: CupertinoColors.tertiarySystemFill.resolveFrom(context),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(CupertinoIcons.person_crop_circle_fill, size: 18, color: Color(0xFFDC2626)),
-                  const SizedBox(width: 8),
-                  Text(
-                    _selectedCashierName,
-                    style: IOSText.subhead.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: CupertinoColors.label.resolveFrom(context),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Icon(
-                    CupertinoIcons.chevron_down,
-                    size: 14,
-                    color: CupertinoColors.secondaryLabel.resolveFrom(context),
-                  ),
-                ],
-              ),
+          // Dynamic Username Input Field
+          Text('Username Kasir', style: IOSText.caption1),
+          const SizedBox(height: 6),
+          CupertinoTextField(
+            controller: _usernameController,
+            placeholder: 'Masukkan username kasir',
+            prefix: const Padding(
+              padding: EdgeInsets.only(left: 12),
+              child: Icon(CupertinoIcons.person_crop_circle, size: 20, color: CupertinoColors.systemGrey),
+            ),
+            clearButtonMode: OverlayVisibilityMode.editing,
+            textInputAction: TextInputAction.next,
+            autocorrect: false,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            decoration: BoxDecoration(
+              color: CupertinoColors.tertiarySystemFill.resolveFrom(context),
+              borderRadius: BorderRadius.circular(10),
             ),
           ),
           const SizedBox(height: IOSSpacing.md),
+
+          Center(
+            child: Text(
+              'PIN Kasir (6 Digit)',
+              style: IOSText.caption1.copyWith(
+                color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
 
           // 6-Digit PIN Dots Display
           _buildPinDots(),
@@ -520,6 +523,15 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
 
           // 3x4 Tactile Keypad
           _buildNumpadGrid(),
+          const SizedBox(height: IOSSpacing.lg),
+
+          IOSButton(
+            label: 'Masuk dengan PIN',
+            variant: IOSButtonVariant.filled,
+            expanded: true,
+            isLoading: _isLoading,
+            onPressed: _isLoading ? null : _submitPinLogin,
+          ),
         ],
       ),
     );
