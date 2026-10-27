@@ -118,5 +118,34 @@ void main() {
       // When order_type_id 99 is queried, falls back to default order type (id 1) price 18000
       expect(sync.getProductPrice(401, 99), equals(18000));
     });
+
+    test('getProductPrice discriminates sellableType between Product and Variant', () {
+      final sync = PosSyncService.instance;
+
+      final mockCatalog = {
+        'order_types': [
+          {'id': 1, 'name': 'Dine In', 'code': 'dine_in', 'is_default': true},
+          {'id': 2, 'name': 'Take Away', 'code': 'take_away'},
+        ],
+        'products': [
+          {'id': 1, 'name': 'Paket Hiro 1', 'sku': 'HRS-01'},
+        ],
+        'product_prices': [
+          // Product 1
+          {'sellable_type': 'Product', 'sellable_id': 1, 'order_type_id': 1, 'price': 29000},
+          {'sellable_type': 'Product', 'sellable_id': 1, 'order_type_id': 2, 'price': 31000},
+          // Variant 1 (Jumbo)
+          {'sellable_type': 'App\\Models\\ProductVariant', 'sellable_id': 1, 'order_type_id': 1, 'price': 39000},
+          {'sellable_type': 'App\\Models\\ProductVariant', 'sellable_id': 1, 'order_type_id': 2, 'price': 42000},
+        ],
+      };
+
+      sync.applyCatalogDataForTesting(mockCatalog);
+
+      expect(sync.getProductPrice(1, 1, sellableType: 'Product'), equals(29000));
+      expect(sync.getProductPrice(1, 2, sellableType: 'Product'), equals(31000));
+      expect(sync.getProductPrice(1, 1, sellableType: 'variant'), equals(39000));
+      expect(sync.getProductPrice(1, 2, sellableType: 'variant'), equals(42000));
+    });
   });
 }

@@ -209,6 +209,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
     return PosSyncService.instance.getProductPrice(
       product['id'],
       _selectedOrderTypeId,
+      sellableType: 'Product',
       defaultPrice: (product['price'] as num?)?.toInt() ?? 0,
     );
   }
@@ -245,15 +246,18 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
             ? PosSyncService.instance.getProductPrice(
                 variantId,
                 newTypeId,
+                sellableType: 'variant',
                 defaultPrice: PosSyncService.instance.getProductPrice(
                   pId,
                   newTypeId,
+                  sellableType: 'Product',
                   defaultPrice: _getBaseProductPrice(pId),
                 ),
               )
             : PosSyncService.instance.getProductPrice(
                 pId,
                 newTypeId,
+                sellableType: 'Product',
                 defaultPrice: _getBaseProductPrice(pId),
               );
         item['price'] = basePrice + modExtra;
@@ -271,7 +275,12 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
   }) {
     setState(() {
       final basePrice = variant != null
-          ? ((variant['price'] as num?)?.toInt() ?? _getPriceFor(product))
+          ? PosSyncService.instance.getProductPrice(
+              variant['id'],
+              _selectedOrderTypeId,
+              sellableType: 'variant',
+              defaultPrice: (variant['price'] as num?)?.toInt() ?? _getPriceFor(product),
+            )
           : _getPriceFor(product);
 
       final modExtra = selectedModifiers.fold<int>(
@@ -335,6 +344,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
         context: context,
         product: product,
         initialPrice: _getPriceFor(product),
+        orderTypeId: _selectedOrderTypeId,
         onAddToCart: (variant, modifiers) {
           _addToCart(product, variant: variant, selectedModifiers: modifiers);
         },

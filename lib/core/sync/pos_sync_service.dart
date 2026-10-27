@@ -1007,12 +1007,26 @@ class PosSyncService extends ChangeNotifier {
   }
 
   /// Get specific product price for the selected order type
-  int getProductPrice(dynamic productId, dynamic orderTypeId, {int defaultPrice = 0}) {
+  int getProductPrice(
+    dynamic productId,
+    dynamic orderTypeId, {
+    String? sellableType,
+    int defaultPrice = 0,
+  }) {
     if (_productPrices.isEmpty && _products.isEmpty) return defaultPrice;
 
     final pIdStr = productId.toString();
     final otIdStr = orderTypeId.toString();
     final branchId = _branch['id']?.toString();
+
+    bool matchesType(Map<String, dynamic> pr) {
+      if (sellableType == null) return true;
+      final type = pr['sellable_type']?.toString();
+      if (type == null) return true;
+      final queryLower = sellableType.toLowerCase();
+      final typeLower = type.toLowerCase();
+      return typeLower.contains(queryLower);
+    }
 
     // 1. Match exact branch override in _productPrices (PriceResolver priority)
     if (branchId != null) {
@@ -1020,7 +1034,8 @@ class PosSyncService extends ChangeNotifier {
         (pr) =>
             pr['sellable_id']?.toString() == pIdStr &&
             pr['order_type_id']?.toString() == otIdStr &&
-            pr['branch_id']?.toString() == branchId,
+            pr['branch_id']?.toString() == branchId &&
+            matchesType(pr),
         orElse: () => {},
       );
       if (branchExact.isNotEmpty && branchExact['price'] != null) {
@@ -1033,7 +1048,8 @@ class PosSyncService extends ChangeNotifier {
       (pr) =>
           pr['sellable_id']?.toString() == pIdStr &&
           pr['order_type_id']?.toString() == otIdStr &&
-          pr['branch_id'] == null,
+          pr['branch_id'] == null &&
+          matchesType(pr),
       orElse: () => {},
     );
     if (centralExact.isNotEmpty && centralExact['price'] != null) {
@@ -1044,7 +1060,8 @@ class PosSyncService extends ChangeNotifier {
     final anyExact = _productPrices.firstWhere(
       (pr) =>
           pr['sellable_id']?.toString() == pIdStr &&
-          pr['order_type_id']?.toString() == otIdStr,
+          pr['order_type_id']?.toString() == otIdStr &&
+          matchesType(pr),
       orElse: () => {},
     );
     if (anyExact.isNotEmpty && anyExact['price'] != null) {
@@ -1059,7 +1076,7 @@ class PosSyncService extends ChangeNotifier {
     if (pMatch.isNotEmpty && pMatch['prices'] is List) {
       final pPrices = (pMatch['prices'] as List<dynamic>).map((e) => e as Map<String, dynamic>).toList();
       final embeddedExact = pPrices.firstWhere(
-        (pr) => pr['order_type_id']?.toString() == otIdStr,
+        (pr) => pr['order_type_id']?.toString() == otIdStr && matchesType(pr),
         orElse: () => {},
       );
       if (embeddedExact.isNotEmpty && embeddedExact['price'] != null) {
@@ -1077,7 +1094,8 @@ class PosSyncService extends ChangeNotifier {
       final defPrice = _productPrices.firstWhere(
         (pr) =>
             pr['sellable_id']?.toString() == pIdStr &&
-            pr['order_type_id']?.toString() == defOtIdStr,
+            pr['order_type_id']?.toString() == defOtIdStr &&
+            matchesType(pr),
         orElse: () => {},
       );
       if (defPrice.isNotEmpty && defPrice['price'] != null) {
@@ -1087,7 +1105,7 @@ class PosSyncService extends ChangeNotifier {
 
     // 6. Fallback to any price for this sellable_id
     final anyPrice = _productPrices.firstWhere(
-      (pr) => pr['sellable_id']?.toString() == pIdStr,
+      (pr) => pr['sellable_id']?.toString() == pIdStr && matchesType(pr),
       orElse: () => {},
     );
     if (anyPrice.isNotEmpty && anyPrice['price'] != null) {

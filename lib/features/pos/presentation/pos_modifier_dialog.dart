@@ -5,23 +5,27 @@ import 'package:flutter/cupertino.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/theme/ios_tokens.dart';
 import '../../../../core/theme/ios_components.dart';
+import '../../../../core/sync/pos_sync_service.dart';
 
 class PosModifierDialog extends StatefulWidget {
   const PosModifierDialog({
     super.key,
     required this.product,
     required this.initialPrice,
+    this.orderTypeId,
     required this.onAddToCart,
   });
 
   final Map<String, dynamic> product;
   final int initialPrice;
+  final int? orderTypeId;
   final Function(Map<String, dynamic>? variant, List<Map<String, dynamic>> modifiers) onAddToCart;
 
   static Future<void> show({
     required BuildContext context,
     required Map<String, dynamic> product,
     required int initialPrice,
+    int? orderTypeId,
     required Function(Map<String, dynamic>? variant, List<Map<String, dynamic>> modifiers) onAddToCart,
   }) {
     return showCupertinoModalPopup<void>(
@@ -30,6 +34,7 @@ class PosModifierDialog extends StatefulWidget {
       builder: (ctx) => PosModifierDialog(
         product: product,
         initialPrice: initialPrice,
+        orderTypeId: orderTypeId,
         onAddToCart: onAddToCart,
       ),
     );
@@ -70,9 +75,21 @@ class _PosModifierDialogState extends State<PosModifierDialog> {
     }
   }
 
+  int _getVariantPrice(Map<String, dynamic> v) {
+    if (widget.orderTypeId != null) {
+      return PosSyncService.instance.getProductPrice(
+        v['id'],
+        widget.orderTypeId,
+        sellableType: 'variant',
+        defaultPrice: (v['price'] as num?)?.toInt() ?? widget.initialPrice,
+      );
+    }
+    return (v['price'] as num?)?.toInt() ?? widget.initialPrice;
+  }
+
   int get _calculatedPrice {
     int base = _selectedVariant != null
-        ? ((_selectedVariant!['price'] as num?)?.toInt() ?? widget.initialPrice)
+        ? _getVariantPrice(_selectedVariant!)
         : widget.initialPrice;
 
     int modExtra = 0;
@@ -214,7 +231,7 @@ class _PosModifierDialogState extends State<PosModifierDialog> {
                               builder: (_) {
                                 final v = _variants[i] as Map<String, dynamic>;
                                 final isSel = _selectedVariant?['id'] == v['id'];
-                                final vPrice = (v['price'] as num?)?.toInt() ?? widget.initialPrice;
+                                final vPrice = _getVariantPrice(v);
 
                                 return CupertinoListTile(
                                   onTap: () {
