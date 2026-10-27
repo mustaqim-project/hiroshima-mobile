@@ -471,7 +471,7 @@ class PosSyncService extends ChangeNotifier {
     }
   }
 
-  Future<Map<String, dynamic>> closeShift(int actualCash) async {
+  Future<Map<String, dynamic>> closeShift(int actualCash, {bool forceCancelUnfinalized = false}) async {
     try {
       final targetBranchId = _branch['id'] ?? currentUser?['branch_id'];
       final uri = Uri.parse('$baseUrl/shifts/close');
@@ -485,6 +485,7 @@ class PosSyncService extends ChangeNotifier {
       }
       final payload = <String, dynamic>{
         'actual_cash': actualCash,
+        if (forceCancelUnfinalized) 'force_cancel_unfinalized': true,
       };
       if (targetBranchId != null) {
         payload['branch_id'] = targetBranchId;
@@ -509,6 +510,7 @@ class PosSyncService extends ChangeNotifier {
         'error_code': body['error_code'],
         'message': body['message'] ?? 'Gagal menutup shift',
         'held_bills': body['held_bills'],
+        'unfinalized_orders': body['unfinalized_orders'],
       };
     } catch (e) {
       final old = _currentShift;

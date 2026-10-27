@@ -37,6 +37,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
   String _selectedCategory = 'Semua';
   String? _selectedTableNo;
   int _manualDiscount = 0;
+  int? _resumedOrderId;
 
   // Cart: [{ 'id', 'name', 'price', 'qty', 'variant_id', 'variant_name', 'modifiers', 'notes' }]
   final List<Map<String, dynamic>> _cart = [];
@@ -532,11 +533,13 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
       orderType: _selectedOrderTypeName,
       orderTypeId: _selectedOrderTypeId,
       tableNo: _selectedTableNo,
+      resumedOrderId: _resumedOrderId,
       onPaymentSuccess: () {
         setState(() {
           _cart.clear();
           _manualDiscount = 0;
           _selectedTableNo = null;
+          _resumedOrderId = null;
         });
       },
     );
@@ -675,6 +678,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                   _cart.clear();
                   _manualDiscount = 0;
                   _selectedTableNo = null;
+                  _resumedOrderId = null;
                 });
                 if (dismissCurrentModal && mounted) {
                   Navigator.pop(context);
@@ -859,6 +863,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
       final rawItems = (resumedOrder['items'] as List<dynamic>?) ?? [];
 
       setState(() {
+        _resumedOrderId = orderId;
         _cart.clear();
         for (final it in rawItems) {
           final modifiers = ((it['modifiers'] as List<dynamic>?) ?? []).map((m) => {
@@ -1027,6 +1032,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
               if (!isCurrent) {
                 if (_cart.isNotEmpty) {
                   _cart.clear();
+                  _resumedOrderId = null;
                 }
                 HapticFeedback.mediumImpact();
                 await PosSyncService.instance.switchBranch(b);
@@ -1985,6 +1991,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                         _cart.clear();
                         _manualDiscount = 0;
                         _selectedTableNo = null;
+                        _resumedOrderId = null;
                       });
                       if (modalSetState != null) modalSetState(() {});
                       if (isModalSheet && onClose != null) {

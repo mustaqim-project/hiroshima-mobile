@@ -30,6 +30,7 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
 
   bool _isLoading = false;
   String? _errorMessage;
+  String? _lastErrorCode;
 
   @override
   void initState() {
@@ -59,6 +60,7 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      _lastErrorCode = null;
     });
 
     final res = await PosSyncService.instance.openShift(amount);
@@ -73,19 +75,24 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
       HapticFeedback.heavyImpact();
       setState(() {
         _errorMessage = res['message'] as String? ?? 'Gagal membuka shift.';
+        _lastErrorCode = res['error_code'] as String?;
       });
     }
   }
 
-  Future<void> _handleCloseShift() async {
+  Future<void> _handleCloseShift({bool forceCancelUnfinalized = false}) async {
     final amount = _parsedAmount;
 
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      _lastErrorCode = null;
     });
 
-    final res = await PosSyncService.instance.closeShift(amount);
+    final res = await PosSyncService.instance.closeShift(
+      amount,
+      forceCancelUnfinalized: forceCancelUnfinalized,
+    );
 
     if (!mounted) return;
     setState(() => _isLoading = false);
@@ -100,6 +107,7 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
       HapticFeedback.heavyImpact();
       setState(() {
         _errorMessage = res['message'] as String? ?? 'Gagal menutup shift.';
+        _lastErrorCode = res['error_code'] as String?;
       });
     }
   }
@@ -208,7 +216,7 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
                 Builder(builder: (ctx) {
                   final isDark = CupertinoTheme.of(ctx).brightness == Brightness.dark;
                   return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     decoration: BoxDecoration(
                       color: isDark ? const Color(0xFF451A1A) : const Color(0xFFFEE2E2),
                       borderRadius: BorderRadius.circular(8),
@@ -217,24 +225,59 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
                         width: 0.5,
                       ),
                     ),
-                    child: Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Icon(
-                          CupertinoIcons.exclamationmark_triangle_fill,
-                          size: 16,
-                          color: isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Icon(
+                                CupertinoIcons.exclamationmark_triangle_fill,
+                                size: 16,
+                                color: isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _errorMessage!,
+                                style: TextStyle(
+                                  color: isDark ? const Color(0xFFFECACA) : const Color(0xFF991B1B),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _errorMessage!,
-                            style: TextStyle(
-                              color: isDark ? const Color(0xFFFECACA) : const Color(0xFF991B1B),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
+                        if (_lastErrorCode == 'UNFINALIZED_TRANSACTIONS') ...[
+                          const SizedBox(height: 10),
+                          CupertinoButton(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                            color: const Color(0xFFDC2626),
+                            borderRadius: BorderRadius.circular(8),
+                            onPressed: _isLoading
+                                ? null
+                                : () => _handleCloseShift(forceCancelUnfinalized: true),
+                            child: const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(CupertinoIcons.trash, size: 15, color: CupertinoColors.white),
+                                SizedBox(width: 6),
+                                Text(
+                                  'Batalkan Transaksi Belum Selesai & Tutup Shift',
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: CupertinoColors.white,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   );

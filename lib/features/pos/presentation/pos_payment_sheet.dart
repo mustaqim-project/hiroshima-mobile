@@ -23,6 +23,7 @@ class PosPaymentSheet extends StatefulWidget {
     required this.orderTypeId,
     required this.tableNo,
     required this.onPaymentSuccess,
+    this.resumedOrderId,
   });
 
   final List<Map<String, dynamic>> cart;
@@ -31,6 +32,7 @@ class PosPaymentSheet extends StatefulWidget {
   final int orderTypeId;
   final String? tableNo;
   final VoidCallback onPaymentSuccess;
+  final int? resumedOrderId;
 
   static Future<void> show({
     required BuildContext context,
@@ -40,6 +42,7 @@ class PosPaymentSheet extends StatefulWidget {
     required int orderTypeId,
     required String? tableNo,
     required VoidCallback onPaymentSuccess,
+    int? resumedOrderId,
   }) {
     return showCupertinoModalPopup<void>(
       context: context,
@@ -51,6 +54,7 @@ class PosPaymentSheet extends StatefulWidget {
         orderTypeId: orderTypeId,
         tableNo: tableNo,
         onPaymentSuccess: onPaymentSuccess,
+        resumedOrderId: resumedOrderId,
       ),
     );
   }
@@ -140,6 +144,7 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
       'user_id': user?['id'] ?? 1,
       'order_type_id': widget.orderTypeId,
       'table_id': widget.tableNo != null ? int.tryParse(widget.tableNo!) : null,
+      'resumed_order_id': widget.resumedOrderId,
       'client_created_at': transactionTime.toIso8601String(),
       'subtotal': calc.subtotal,
       'promo_discount_amount': calc.promoDiscount,
