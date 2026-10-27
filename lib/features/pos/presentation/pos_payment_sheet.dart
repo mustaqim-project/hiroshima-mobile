@@ -2,6 +2,8 @@
 // Apple HIG Payment & Bluetooth Thermal Printing Sheet for Hiroshima POS
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart' show Colors, Theme;
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/pricing/order_calculator.dart';
@@ -374,60 +376,125 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
 
                     const SizedBox(height: 16),
 
-                    // Payment Methods Selection (from Backend)
+                    // Payment Methods Selection (from Backend) - 2-Column Grid (Kiri & Kanan)
                     Text('METODE PEMBAYARAN', style: IOSText.caption1.copyWith(color: IOSColors.secondaryLabel.resolveFrom(context), fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 6),
-                    IOSGroupedCard(
-                      children: [
-                        if (paymentMethods.isEmpty)
-                          CupertinoListTile(
-                            title: const Text('Tunai (Cash)'),
-                            trailing: Icon(CupertinoIcons.checkmark_circle_fill, color: IOSColors.accent.resolveFrom(context)),
-                          )
-                        else
-                          for (int i = 0; i < paymentMethods.length; i++) ...[
-                            if (i > 0)
-                              Container(
-                                height: 0.5,
-                                margin: const EdgeInsets.only(left: 48),
-                                color: IOSColors.separator.resolveFrom(context).withValues(alpha: 0.4),
-                              ),
-                            Builder(
-                              builder: (_) {
-                                final pm = paymentMethods[i];
-                                final isSel = _selectedPaymentMethod['id'] == pm['id'];
-                                final name = pm['name'] as String? ?? 'Metode';
+                    const SizedBox(height: 8),
+                    Builder(
+                      builder: (ctx) {
+                        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+                        final methods = paymentMethods.isEmpty
+                            ? [
+                                {'id': 1, 'name': 'Tunai (Cash)', 'code': 'CASH'},
+                                {'id': 2, 'name': 'QRIS', 'code': 'QRIS'},
+                              ]
+                            : paymentMethods;
 
-                                IconData pIcon = CupertinoIcons.money_dollar;
-                                if (name.toLowerCase().contains('qris')) {
-                                  pIcon = CupertinoIcons.qrcode;
-                                } else if (name.toLowerCase().contains('kartu') || name.toLowerCase().contains('edc')) {
-                                  pIcon = CupertinoIcons.creditcard;
-                                } else if (name.toLowerCase().contains('transfer')) {
-                                  pIcon = CupertinoIcons.arrow_right_arrow_left;
-                                }
+                        return GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: methods.length,
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            crossAxisSpacing: 10,
+                            mainAxisSpacing: 10,
+                            childAspectRatio: 2.5,
+                          ),
+                          itemBuilder: (context, i) {
+                            final pm = methods[i];
+                            final isSel = _selectedPaymentMethod['id'] == pm['id'];
+                            final name = pm['name'] as String? ?? 'Metode';
 
-                                return CupertinoListTile(
-                                  onTap: () {
-                                    setState(() {
-                                      _selectedPaymentMethod = pm;
-                                      if (!_isCash) {
-                                        _cashGiven = calc.totalAmount;
-                                      }
-                                    });
-                                  },
-                                  leading: Icon(pIcon, color: isSel ? IOSColors.accent.resolveFrom(context) : IOSColors.secondaryLabel.resolveFrom(context)),
-                                  title: Text(name, style: IOSText.body.copyWith(fontWeight: isSel ? FontWeight.bold : FontWeight.normal)),
-                                  trailing: Icon(
-                                    isSel ? CupertinoIcons.checkmark_circle_fill : CupertinoIcons.circle,
-                                    color: isSel ? IOSColors.accent.resolveFrom(context) : CupertinoColors.systemGrey4,
-                                    size: 20,
-                                  ),
-                                );
+                            IconData pIcon = CupertinoIcons.money_dollar;
+                            if (name.toLowerCase().contains('qris')) {
+                              pIcon = CupertinoIcons.qrcode;
+                            } else if (name.toLowerCase().contains('kartu') || name.toLowerCase().contains('edc')) {
+                              pIcon = CupertinoIcons.creditcard;
+                            } else if (name.toLowerCase().contains('transfer')) {
+                              pIcon = CupertinoIcons.arrow_right_arrow_left;
+                            }
+
+                            final accentColor = IOSColors.accent.resolveFrom(context);
+
+                            return CupertinoButton(
+                              padding: EdgeInsets.zero,
+                              onPressed: () {
+                                HapticFeedback.selectionClick();
+                                setState(() {
+                                  _selectedPaymentMethod = pm;
+                                  if (!_isCash) {
+                                    _cashGiven = calc.totalAmount;
+                                  }
+                                });
                               },
-                            ),
-                          ],
-                      ],
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: isSel
+                                      ? accentColor.withValues(alpha: isDark ? 0.18 : 0.08)
+                                      : (isDark ? const Color(0xFF242426) : Colors.white),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: isSel
+                                        ? accentColor
+                                        : (isDark ? const Color(0xFF38383A) : const Color(0xFFE2E8F0)),
+                                    width: isSel ? 1.8 : 0.8,
+                                  ),
+                                  boxShadow: isSel
+                                      ? [
+                                          BoxShadow(
+                                            color: accentColor.withValues(alpha: 0.15),
+                                            blurRadius: 6,
+                                            offset: const Offset(0, 2),
+                                          ),
+                                        ]
+                                      : null,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 32,
+                                      height: 32,
+                                      decoration: BoxDecoration(
+                                        color: isSel
+                                            ? accentColor.withValues(alpha: isDark ? 0.25 : 0.15)
+                                            : (isDark ? Colors.white10 : const Color(0xFFF1F5F9)),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      alignment: Alignment.center,
+                                      child: Icon(
+                                        pIcon,
+                                        size: 18,
+                                        color: isSel ? accentColor : IOSColors.secondaryLabel.resolveFrom(context),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        name,
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: isSel ? FontWeight.w700 : FontWeight.w500,
+                                          color: isSel ? accentColor : IOSColors.label.resolveFrom(context),
+                                          decoration: TextDecoration.none,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Icon(
+                                      isSel ? CupertinoIcons.checkmark_circle_fill : CupertinoIcons.circle,
+                                      color: isSel ? accentColor : CupertinoColors.systemGrey4,
+                                      size: 18,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      },
                     ),
 
                     // Cash Input & Change Calculation Section
