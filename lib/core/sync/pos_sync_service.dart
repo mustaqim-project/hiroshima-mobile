@@ -992,33 +992,109 @@ class PosSyncService extends ChangeNotifier {
         .map((e) => e as Map<String, dynamic>)
         .toList();
 
+    final defaultOt = _orderTypes.firstWhere(
+      (ot) => ot['is_default'] == true,
+      orElse: () => _orderTypes.isNotEmpty ? _orderTypes.first : {'id': 1},
+    );
+    final defaultOtId = defaultOt['id'] ?? 1;
+
     for (final p in _products) {
       final pId = p['id'];
-      final defaultOtId = _orderTypes.isNotEmpty ? _orderTypes.first['id'] : 1;
       p['price'] = getProductPrice(pId, defaultOtId, defaultPrice: (p['manual_cost'] as num?)?.toInt() ?? 0);
     }
   }
 
   /// Get specific product price for the selected order type
   int getProductPrice(dynamic productId, dynamic orderTypeId, {int defaultPrice = 0}) {
-    if (_productPrices.isEmpty) return defaultPrice;
+    if (_productPrices.isEmpty && _products.isEmpty) return defaultPrice;
 
-    // 1. Match exact sellable_id and order_type_id
-    final exact = _productPrices.firstWhere(
-      (pr) => pr['sellable_id'] == productId && pr['order_type_id'] == orderTypeId,
-      orElse: () => {},
-    );
-    if (exact.isNotEmpty && exact['price'] != null) {
-      return (exact['price'] as num).toInt();
+    final pIdStr = productId.toString();
+    final otIdStr = orderTypeId.toString();
+    final branchId = _branch['id']?.toString();
+
+    // 1. Match exact branch override in _productPrices (PriceResolver priority)
+    if (branchId != null) {
+      final branchExact = _productPrices.firstWhere(
+        (pr) =>
+            pr['sellable_id']?.toString() == pIdStr &&
+            pr['order_type_id']?.toString() == otIdStr &&
+            pr['branch_id']?.toString() == branchId,
+        orElse: () => {},
+      );
+      if (branchExact.isNotEmpty && branchExact['price'] != null) {
+        return (branchExact['price'] as num).toInt();
+      }
     }
 
-    // 2. Fallback to any price for this sellable_id
+    // 2. Match central price (branch_id is null) in _productPrices
+    final centralExact = _productPrices.firstWhere(
+      (pr) =>
+          pr['sellable_id']?.toString() == pIdStr &&
+          pr['order_type_id']?.toString() == otIdStr &&
+          pr['branch_id'] == null,
+      orElse: () => {},
+    );
+    if (centralExact.isNotEmpty && centralExact['price'] != null) {
+      return (centralExact['price'] as num).toInt();
+    }
+
+    // 3. Match any entry in _productPrices for sellable_id and order_type_id
+    final anyExact = _productPrices.firstWhere(
+      (pr) =>
+          pr['sellable_id']?.toString() == pIdStr &&
+          pr['order_type_id']?.toString() == otIdStr,
+      orElse: () => {},
+    );
+    if (anyExact.isNotEmpty && anyExact['price'] != null) {
+      return (anyExact['price'] as num).toInt();
+    }
+
+    // 4. Check embedded prices in product object from _products
+    final pMatch = _products.firstWhere(
+      (p) => p['id']?.toString() == pIdStr,
+      orElse: () => {},
+    );
+    if (pMatch.isNotEmpty && pMatch['prices'] is List) {
+      final pPrices = (pMatch['prices'] as List<dynamic>).map((e) => e as Map<String, dynamic>).toList();
+      final embeddedExact = pPrices.firstWhere(
+        (pr) => pr['order_type_id']?.toString() == otIdStr,
+        orElse: () => {},
+      );
+      if (embeddedExact.isNotEmpty && embeddedExact['price'] != null) {
+        return (embeddedExact['price'] as num).toInt();
+      }
+    }
+
+    // 5. Fallback to default order type price
+    final defaultOt = _orderTypes.firstWhere(
+      (ot) => ot['is_default'] == true,
+      orElse: () => {},
+    );
+    if (defaultOt.isNotEmpty && defaultOt['id'] != null && defaultOt['id'].toString() != otIdStr) {
+      final defOtIdStr = defaultOt['id'].toString();
+      final defPrice = _productPrices.firstWhere(
+        (pr) =>
+            pr['sellable_id']?.toString() == pIdStr &&
+            pr['order_type_id']?.toString() == defOtIdStr,
+        orElse: () => {},
+      );
+      if (defPrice.isNotEmpty && defPrice['price'] != null) {
+        return (defPrice['price'] as num).toInt();
+      }
+    }
+
+    // 6. Fallback to any price for this sellable_id
     final anyPrice = _productPrices.firstWhere(
-      (pr) => pr['sellable_id'] == productId,
+      (pr) => pr['sellable_id']?.toString() == pIdStr,
       orElse: () => {},
     );
     if (anyPrice.isNotEmpty && anyPrice['price'] != null) {
       return (anyPrice['price'] as num).toInt();
+    }
+
+    // 7. Fallback to product 'price' field if present
+    if (pMatch.isNotEmpty && pMatch['price'] != null) {
+      return (pMatch['price'] as num).toInt();
     }
 
     return defaultPrice;

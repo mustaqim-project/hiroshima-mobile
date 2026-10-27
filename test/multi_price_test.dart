@@ -41,5 +41,82 @@ void main() {
       expect(sync.getProductPrice(102, 2), equals(6000), reason: 'Harga Take Away harus Rp 6.000');
       expect(sync.getProductPrice(102, 3), equals(7000), reason: 'Harga Delivery harus Rp 7.000');
     });
+
+    test('getProductPrice handles branch override priority over central price', () {
+      final sync = PosSyncService.instance;
+
+      final mockCatalog = {
+        'branch': {'id': 5, 'name': 'Hiroshima Cikini'},
+        'order_types': [
+          {'id': 1, 'name': 'Dine In', 'code': 'dine_in', 'is_default': true},
+          {'id': 2, 'name': 'Take Away', 'code': 'take_away'},
+        ],
+        'products': [
+          {'id': 201, 'name': 'Gyoza Panggang', 'sku': 'GYZ-01', 'manual_cost': 10000},
+        ],
+        'product_prices': [
+          // Central price (branch_id null): 20.000
+          {'sellable_id': 201, 'order_type_id': 1, 'branch_id': null, 'price': 20000},
+          // Branch override for branch 5: 24.000
+          {'sellable_id': 201, 'order_type_id': 1, 'branch_id': 5, 'price': 24000},
+        ],
+      };
+
+      sync.applyCatalogDataForTesting(mockCatalog);
+
+      // Should prioritize branch override (24.000) over central price (20.000)
+      expect(sync.getProductPrice(201, 1), equals(24000));
+    });
+
+    test('getProductPrice handles embedded product prices and type resilience (String and int)', () {
+      final sync = PosSyncService.instance;
+
+      final mockCatalog = {
+        'order_types': [
+          {'id': 1, 'name': 'Dine In', 'code': 'dine_in', 'is_default': true},
+          {'id': 3, 'name': 'Delivery', 'code': 'delivery'},
+        ],
+        'products': [
+          {
+            'id': 301,
+            'name': 'Karaage Bowl',
+            'sku': 'KB-01',
+            'prices': [
+              {'order_type_id': 1, 'price': 25000},
+              {'order_type_id': 3, 'price': 29000},
+            ],
+          },
+        ],
+        'product_prices': [],
+      };
+
+      sync.applyCatalogDataForTesting(mockCatalog);
+
+      // Eager loaded embedded prices
+      expect(sync.getProductPrice(301, 1), equals(25000));
+      expect(sync.getProductPrice('301', '3'), equals(29000), reason: 'Type resilience: String id should match int');
+    });
+
+    test('getProductPrice falls back to default order type price when specific order type is unconfigured', () {
+      final sync = PosSyncService.instance;
+
+      final mockCatalog = {
+        'order_types': [
+          {'id': 1, 'name': 'Dine In', 'code': 'dine_in', 'is_default': true},
+          {'id': 99, 'name': 'Event Catering', 'code': 'catering', 'is_default': false},
+        ],
+        'products': [
+          {'id': 401, 'name': 'Takoyaki 6 pcs', 'sku': 'TKO-01'},
+        ],
+        'product_prices': [
+          {'sellable_id': 401, 'order_type_id': 1, 'price': 18000},
+        ],
+      };
+
+      sync.applyCatalogDataForTesting(mockCatalog);
+
+      // When order_type_id 99 is queried, falls back to default order type (id 1) price 18000
+      expect(sync.getProductPrice(401, 99), equals(18000));
+    });
   });
 }

@@ -1482,6 +1482,10 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
           ),
         ),
 
+        // Order Type Selector on phone view so cashier can switch Dine In / Take Away / Delivery directly while browsing
+        if (!isSplitView)
+          _buildOrderTypeSelector(),
+
         // Categories Horizontal Bar
         SizedBox(
           height: 44,
