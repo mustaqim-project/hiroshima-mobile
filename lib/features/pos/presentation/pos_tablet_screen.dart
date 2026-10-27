@@ -3,7 +3,7 @@
 // Responsive Phone + Tablet (iOS + Android) · 100% Dynamic Backend Data · Panda POS Bluetooth Thermal Print
 
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart' show ScaffoldMessenger, SnackBar;
+import 'package:flutter/material.dart' show Colors, ScaffoldMessenger, SnackBar, Theme;
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../../../core/pricing/order_calculator.dart';
@@ -15,6 +15,8 @@ import '../../../core/sync/pos_sync_service.dart';
 import '../../../core/theme/ios_adaptive.dart';
 import '../../../core/theme/ios_components.dart';
 import '../../../core/theme/ios_tokens.dart';
+import '../../../core/theme/pos_product_image.dart';
+import '../../../core/theme/theme_controller.dart';
 import 'pos_modifier_dialog.dart';
 import 'pos_payment_sheet.dart';
 import 'pos_shift_sheet.dart';
@@ -32,7 +34,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
   final TextEditingController _searchController = TextEditingController();
 
   // Active POS state
-  String _selectedOrderType = 'Dine In';
+  int? _selectedOrderTypeIdState;
   String _selectedCategory = 'Semua';
   String? _selectedTableNo;
   int _manualDiscount = 0;
@@ -74,23 +76,36 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
     return (b['name'] as String?) ?? 'Hiroshima Pusat';
   }
 
-  // Dynamic Order Types from Backend (ensures at least 2 for CupertinoSlidingSegmentedControl)
-  List<String> get _availableOrderTypes {
+  // Dynamic Order Types from Backend (100% API driven, no hardcoded dine-in)
+  List<Map<String, dynamic>> get _availableOrderTypes {
     final ot = PosSyncService.instance.orderTypes;
-    if (ot.length >= 2) {
-      return ot.map((e) => e['name'] as String).toList();
+    if (ot.isNotEmpty) {
+      return ot;
     }
-    return ['Dine In', 'Take Away', 'Delivery'];
+    return [
+      {'id': 1, 'name': 'Order Reguler', 'requires_table': true, 'is_default': true},
+    ];
   }
 
-  int get _selectedOrderTypeId {
-    final otList = PosSyncService.instance.orderTypes;
-    final matchedOt = otList.firstWhere(
-      (ot) => (ot['name'] as String).toLowerCase() == _selectedOrderType.toLowerCase(),
-      orElse: () => {'id': 1},
+  Map<String, dynamic> get _activeOrderType {
+    final list = _availableOrderTypes;
+    if (_selectedOrderTypeIdState != null) {
+      return list.firstWhere(
+        (ot) => (ot['id'] as num?)?.toInt() == _selectedOrderTypeIdState,
+        orElse: () => list.first,
+      );
+    }
+    final def = list.firstWhere(
+      (ot) => ot['is_default'] == true,
+      orElse: () => list.first,
     );
-    return (matchedOt['id'] as num?)?.toInt() ?? 1;
+    _selectedOrderTypeIdState = (def['id'] as num?)?.toInt() ?? 1;
+    return def;
   }
+
+  int get _selectedOrderTypeId => (_activeOrderType['id'] as num?)?.toInt() ?? 1;
+  String get _selectedOrderTypeName => (_activeOrderType['name'] as String?) ?? 'Pesanan';
+  bool get _requiresTable => _activeOrderType['requires_table'] == true;
 
   // Dynamic Categories from Backend
   List<Map<String, dynamic>> get _currentCategories {
@@ -201,15 +216,19 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
     );
   }
 
-  void _onOrderTypeChanged(String newType) {
+  void _onOrderTypeChanged(int newTypeId) {
+    HapticFeedback.selectionClick();
     setState(() {
-      _selectedOrderType = newType;
+      _selectedOrderTypeIdState = newTypeId;
+      if (!_requiresTable) {
+        _selectedTableNo = null;
+      }
       // Recalculate price in active cart items to match new order type
       for (final item in _cart) {
         final pId = item['id'];
         item['price'] = PosSyncService.instance.getProductPrice(
           pId,
-          _selectedOrderTypeId,
+          newTypeId,
           defaultPrice: item['price'] as int,
         );
       }
@@ -432,7 +451,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
       context: context,
       cart: _cart,
       calculation: _calculation,
-      orderType: _selectedOrderType,
+      orderType: _selectedOrderTypeName,
       orderTypeId: _selectedOrderTypeId,
       tableNo: _selectedTableNo,
       onPaymentSuccess: () {
@@ -625,16 +644,25 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+              width: 26,
+              height: 26,
               decoration: BoxDecoration(
-                color: IOSColors.accent.resolveFrom(context),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(6),
               ),
-              child: const Text('H', style: TextStyle(color: CupertinoColors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+              clipBehavior: Clip.antiAlias,
+              child: Image.asset(
+                'assets/images/logo_badge.jpg',
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => Container(
+                  color: IOSColors.accent.resolveFrom(context),
+                  alignment: Alignment.center,
+                  child: const Text('H', style: TextStyle(color: CupertinoColors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                ),
+              ),
             ),
-            const SizedBox(width: 8),
-            Text('HIROSHIMA POS', style: IOSText.headline.copyWith(fontWeight: FontWeight.w800)),
             if (isTablet) ...[
+              const SizedBox(width: 8),
+              Text(PosSyncService.instance.appName, style: IOSText.headline.copyWith(fontWeight: FontWeight.w800)),
               const SizedBox(width: 10),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -653,9 +681,32 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
             ],
           ],
         ),
+        middle: isTablet
+            ? null
+            : Text(
+                PosSyncService.instance.appName,
+                style: IOSText.headline.copyWith(fontWeight: FontWeight.w800),
+                overflow: TextOverflow.ellipsis,
+              ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Dark / Light Theme Toggle Button
+            CupertinoButton(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              onPressed: () => ThemeController.instance.toggleTheme(context),
+              child: Icon(
+                Theme.of(context).brightness == Brightness.dark
+                    ? CupertinoIcons.sun_max_fill
+                    : CupertinoIcons.moon_fill,
+                size: 20,
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? const Color(0xFFFFD60A)
+                    : const Color(0xFF475569),
+              ),
+            ),
+            const SizedBox(width: 4),
+
             // Dynamic Backend Sync Badge
             CupertinoButton(
               padding: EdgeInsets.zero,
@@ -953,6 +1004,8 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
     final price = _getPriceFor(product);
     final hasVariants = product['has_variants'] == true || ((product['variants'] as List?)?.isNotEmpty ?? false);
     final modifierGroups = (product['modifier_groups'] as List?) ?? [];
+    final imagePath = product['image_path'] as String? ?? product['image_url'] as String?;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return CupertinoButton(
       padding: EdgeInsets.zero,
@@ -962,110 +1015,152 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
           color: IOSColors.secondaryGroupedBackground.resolveFrom(context),
           borderRadius: IOSRadius.cardRadius,
           border: Border.all(
-            color: IOSColors.separator.resolveFrom(context).withValues(alpha: 0.35),
+            color: IOSColors.separator.resolveFrom(context).withValues(alpha: isDark ? 0.35 : 0.25),
             width: 0.6,
           ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
         ),
-        padding: const EdgeInsets.all(12),
+        clipBehavior: Clip.antiAlias,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Top Category Tag & Variants Badge
-            Row(
+            // Top Image Container with Overlaid Badges
+            Stack(
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: IOSColors.systemFill.resolveFrom(context),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    category,
-                    style: IOSText.caption2.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: IOSColors.secondaryLabel.resolveFrom(context),
+                PosProductImage(
+                  imagePath: imagePath,
+                  width: double.infinity,
+                  height: 104,
+                  category: category,
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+                ),
+                // Category Pill (Top-Left)
+                Positioned(
+                  top: 7,
+                  left: 7,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                    decoration: BoxDecoration(
+                      color: isDark ? CupertinoColors.black.withValues(alpha: 0.7) : CupertinoColors.white.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: (isDark ? CupertinoColors.white : CupertinoColors.black).withValues(alpha: 0.08),
+                        width: 0.5,
+                      ),
+                    ),
+                    child: Text(
+                      category,
+                      style: IOSText.caption2.copyWith(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 9.5,
+                        color: isDark ? CupertinoColors.white : const Color(0xFF1E293B),
+                      ),
                     ),
                   ),
                 ),
-                const Spacer(),
+                // Variants / Custom Modifiers Pill (Top-Right)
                 if (hasVariants)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: IOSColors.info.resolveFrom(context).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      'Varian',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: IOSColors.info.resolveFrom(context),
+                  Positioned(
+                    top: 7,
+                    right: 7,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF007AFF).withValues(alpha: 0.92),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text(
+                        'Varian',
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.bold,
+                          color: CupertinoColors.white,
+                        ),
                       ),
                     ),
                   )
                 else if (modifierGroups.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: IOSColors.warning.resolveFrom(context).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      'Kustom',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: IOSColors.warning.resolveFrom(context),
+                  Positioned(
+                    top: 7,
+                    right: 7,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFF9500).withValues(alpha: 0.92),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text(
+                        'Kustom',
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.bold,
+                          color: CupertinoColors.white,
+                        ),
                       ),
                     ),
                   ),
               ],
             ),
-            const SizedBox(height: 8),
 
-            // Product Name
+            // Bottom Product Info
             Expanded(
-              child: Text(
-                name,
-                style: IOSText.subhead.copyWith(fontWeight: FontWeight.bold, height: 1.25),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-
-            // Price & Add Button Row
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      _currency.format(price),
-                      style: IOSText.tabular(IOSText.headline).copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: IOSColors.accent.resolveFrom(context),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      name,
+                      style: IOSText.subhead.copyWith(
+                        fontWeight: FontWeight.bold,
+                        height: 1.2,
+                        color: IOSColors.label.resolveFrom(context),
                       ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              _currency.format(price),
+                              style: IOSText.tabular(IOSText.subhead).copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: IOSColors.accent.resolveFrom(context),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Container(
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            color: IOSColors.accent.resolveFrom(context).withValues(alpha: 0.12),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            CupertinoIcons.add,
+                            size: 14,
+                            color: IOSColors.accent.resolveFrom(context),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 4),
-                Container(
-                  width: 30,
-                  height: 30,
-                  decoration: BoxDecoration(
-                    color: IOSColors.accent.resolveFrom(context).withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    CupertinoIcons.add,
-                    size: 16,
-                    color: IOSColors.accent.resolveFrom(context),
-                  ),
-                ),
-              ],
+              ),
             ),
           ],
         ),
@@ -1151,18 +1246,21 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
             ),
           ),
 
-          // Order Types Segmented Control (Dine In, Take Away, Delivery)
+          // Order Types Segmented Control (100% Dynamic from Backend API, Zero Hardcode)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: SizedBox(
               width: double.infinity,
-              child: CupertinoSlidingSegmentedControl<String>(
-                groupValue: _selectedOrderType,
+              child: CupertinoSlidingSegmentedControl<int>(
+                groupValue: _selectedOrderTypeId,
                 children: {
                   for (final ot in _availableOrderTypes)
-                    ot: Padding(
+                    (ot['id'] as num).toInt(): Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      child: Text(ot, style: IOSText.caption1.copyWith(fontWeight: FontWeight.w600)),
+                      child: Text(
+                        (ot['name'] as String?) ?? 'Order',
+                        style: IOSText.caption1.copyWith(fontWeight: FontWeight.w600),
+                      ),
                     ),
                 },
                 onValueChanged: (val) {
@@ -1172,8 +1270,8 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
             ),
           ),
 
-          // Table Selector (if Dine In)
-          if (_selectedOrderType.toLowerCase().contains('dine')) ...[
+          // Table Selector (dynamically shown when order type requires table)
+          if (_requiresTable) ...[
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
               child: CupertinoButton(
@@ -1452,7 +1550,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  '${_cart.length} item • $_selectedOrderType',
+                  '${_cart.length} item • $_selectedOrderTypeName',
                   style: IOSText.caption2,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

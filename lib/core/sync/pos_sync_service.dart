@@ -24,6 +24,7 @@ class PosSyncService extends ChangeNotifier {
   static const String _prefKeyBaseUrl = 'hiroshima_pos_api_base_url';
   static const String _prefKeyAuthToken = 'hiroshima_pos_auth_token';
   static const String _prefKeyCurrentUser = 'hiroshima_pos_current_user';
+  static const String _prefKeyCatalogCache = 'hiroshima_pos_catalog_cache_v2';
 
   /// Official production API base URL on hiroshima.web.id
   static const String productionBaseUrl = 'https://hiroshima.web.id/api/v1';
@@ -70,6 +71,8 @@ class PosSyncService extends ChangeNotifier {
   List<Map<String, dynamic>> _productPrices = [];
   List<Map<String, dynamic>> _tables = [];
   List<Map<String, dynamic>> _paymentMethods = [];
+  List<Map<String, dynamic>> _cashiers = [];
+  Map<String, dynamic> _systemSettings = {};
 
   Map<String, dynamic> get branch => _branch;
   List<Map<String, dynamic>> get categories => _categories;
@@ -78,6 +81,41 @@ class PosSyncService extends ChangeNotifier {
   List<Map<String, dynamic>> get productPrices => _productPrices;
   List<Map<String, dynamic>> get tables => _tables;
   List<Map<String, dynamic>> get paymentMethods => _paymentMethods;
+  List<Map<String, dynamic>> get cashiers => _cashiers;
+  Map<String, dynamic> get systemSettings => _systemSettings;
+
+  String get appName => (_systemSettings['app_name'] as String?) ?? 'HIROSHIMA POS';
+  String get appTagline => (_systemSettings['app_tagline'] as String?) ?? 'Japanese Street Food';
+  String? get appLogoUrl => resolveImageUrl(_systemSettings['app_logo_url'] as String?);
+
+  @visibleForTesting
+  void resetForTesting() {
+    _branch = {};
+    _categories = [];
+    _products = [];
+    _orderTypes = [];
+    _productPrices = [];
+    _tables = [];
+    _paymentMethods = [];
+    _cashiers = [];
+    _systemSettings = {};
+    currentUser = null;
+  }
+
+  /// Resolves relative or localhost image URLs to the active production backend
+  String? resolveImageUrl(String? pathOrUrl) {
+    if (pathOrUrl == null || pathOrUrl.trim().isEmpty) return null;
+    final clean = pathOrUrl.trim();
+    if (clean.startsWith('http://') || clean.startsWith('https://')) {
+      if (clean.contains('localhost') || clean.contains('127.0.0.1')) {
+        final uri = Uri.parse(clean);
+        return '$serverBaseUrl${uri.path}';
+      }
+      return clean;
+    }
+    final root = clean.startsWith('/') ? clean : '/$clean';
+    return '$serverBaseUrl$root';
+  }
 
   int get pendingQueueCount => OutboxManager().queueSize;
 
@@ -456,8 +494,20 @@ class PosSyncService extends ChangeNotifier {
     super.dispose();
   }
 
-  /// Load catalog from local disk cache
-  bool _loadCacheFromDisk() {
+  /// Load catalog from local disk cache / SharedPreferences
+  Future<bool> _loadCacheFromDisk() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final content = prefs.getString(_prefKeyCatalogCache);
+      if (content != null && content.isNotEmpty) {
+        final json = jsonDecode(content) as Map<String, dynamic>;
+        _applyCatalogData(json);
+        _statusMessage = 'Dimuat dari cache lokal (Offline)';
+        notifyListeners();
+        return true;
+      }
+    } catch (_) {}
+
     try {
       if (_cacheFile.existsSync()) {
         final content = _cacheFile.readAsStringSync();
@@ -473,10 +523,16 @@ class PosSyncService extends ChangeNotifier {
     return false;
   }
 
-  /// Save catalog data to local disk cache
-  void _saveCacheToDisk(Map<String, dynamic> data) {
+  /// Save catalog data to local disk cache & SharedPreferences
+  void _saveCacheToDisk(Map<String, dynamic> data) async {
+    final str = jsonEncode(data);
     try {
-      _cacheFile.writeAsStringSync(jsonEncode(data));
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefKeyCatalogCache, str);
+    } catch (_) {}
+
+    try {
+      _cacheFile.writeAsStringSync(str);
     } catch (e) {
       debugPrint('[PosSyncService] Error writing cache file: $e');
     }
@@ -582,6 +638,10 @@ class PosSyncService extends ChangeNotifier {
     _paymentMethods = ((data['payment_methods'] as List<dynamic>?) ?? [])
         .map((e) => e as Map<String, dynamic>)
         .toList();
+    _cashiers = ((data['users'] as List<dynamic>?) ?? [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+    _systemSettings = (data['settings'] as Map<String, dynamic>?) ?? {};
 
     // Map multi-prices from product_prices
     _productPrices = ((data['product_prices'] as List<dynamic>?) ?? [])

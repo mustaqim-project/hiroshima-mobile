@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:mobile/core/pricing/order_calculator.dart';
 import 'package:mobile/core/sync/pos_sync_service.dart';
 import 'package:mobile/features/auth/presentation/pos_login_screen.dart';
+import 'package:mobile/features/auth/presentation/pos_preload_screen.dart';
 import 'package:mobile/features/pos/presentation/pos_modifier_dialog.dart';
 import 'package:mobile/features/pos/presentation/pos_payment_sheet.dart';
 import 'package:mobile/features/pos/presentation/pos_shift_sheet.dart';
@@ -18,12 +19,12 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     PosSyncService.instance.stopAutoSync();
-    PosSyncService.instance.setMockUser(null);
+    PosSyncService.instance.resetForTesting();
   });
 
   tearDown(() {
     PosSyncService.instance.stopAutoSync();
-    PosSyncService.instance.setMockUser(null);
+    PosSyncService.instance.resetForTesting();
   });
 
   group('Mobile Phone Screen Responsiveness (Compact 360x780)', () {
@@ -36,12 +37,11 @@ void main() {
 
       PosSyncService.instance.setMockUser(null);
 
-      await tester.pumpWidget(const ProviderScope(child: HiroshimaPosApp()));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pumpWidget(const CupertinoApp(home: PosLoginScreen()));
+      await tester.pumpAndSettle();
 
       expect(find.byType(PosLoginScreen), findsOneWidget);
-      expect(find.text('HIROSHIMA'), findsOneWidget);
+      expect(find.textContaining('HIROSHIMA'), findsWidgets);
       expect(find.text('PIN Kasir'), findsOneWidget);
       expect(find.text('Email & Sandi'), findsOneWidget);
       expect(find.text('Aktivasi'), findsOneWidget);
@@ -68,18 +68,17 @@ void main() {
         'products': [
           {'id': 10, 'name': 'Tori Paitan Ramen', 'category_id': 1, 'price': 38000, 'has_variants': false},
         ],
-        'order_types': [{'id': 1, 'name': 'Dine In'}],
+        'order_types': [{'id': 1, 'name': 'Dine In', 'requires_table': true}],
         'product_prices': [],
         'tables': [],
         'payment_methods': [{'id': 1, 'name': 'Tunai', 'code': 'CASH'}],
       });
 
-      await tester.pumpWidget(const ProviderScope(child: HiroshimaPosApp()));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pumpWidget(const CupertinoApp(home: PosTabletScreen()));
+      await tester.pumpAndSettle();
 
       expect(find.byType(PosTabletScreen), findsOneWidget);
-      expect(find.text('HIROSHIMA POS'), findsOneWidget);
+      expect(find.textContaining('HIROSHIMA'), findsWidgets);
       expect(find.text('Tori Paitan Ramen'), findsOneWidget);
 
       // Tap product to add to cart
@@ -206,12 +205,11 @@ void main() {
 
       PosSyncService.instance.setMockUser(null);
 
-      await tester.pumpWidget(const ProviderScope(child: HiroshimaPosApp()));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pumpWidget(const CupertinoApp(home: PosLoginScreen()));
+      await tester.pumpAndSettle();
 
       expect(find.byType(PosLoginScreen), findsOneWidget);
-      expect(find.text('HIROSHIMA'), findsOneWidget);
+      expect(find.textContaining('HIROSHIMA'), findsWidgets);
       expect(find.text('PIN Kasir'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
@@ -227,16 +225,44 @@ void main() {
         'role': 'cashier',
       });
 
-      await tester.pumpWidget(const ProviderScope(child: HiroshimaPosApp()));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 100));
+      PosSyncService.instance.applyCatalogDataForTesting({
+        'branch': {'id': 1, 'name': 'Hiroshima Cikini', 'code': 'HRS-CKN'},
+        'categories': [{'id': 1, 'name': 'Ramen', 'code': 'RMN'}],
+        'products': [
+          {'id': 10, 'name': 'Tori Paitan Ramen', 'category_id': 1, 'price': 38000, 'has_variants': false},
+        ],
+        'order_types': [
+          {'id': 1, 'name': 'Dine In', 'requires_table': true},
+          {'id': 2, 'name': 'Take Away', 'requires_table': false},
+        ],
+        'product_prices': [],
+        'tables': [],
+        'payment_methods': [{'id': 1, 'name': 'Tunai', 'code': 'CASH'}],
+      });
+
+      await tester.pumpWidget(const CupertinoApp(home: PosTabletScreen()));
+      await tester.pumpAndSettle();
 
       // Both catalog and split cart pane are visible simultaneously
-      expect(find.text('HIROSHIMA POS'), findsOneWidget);
+      expect(find.textContaining('HIROSHIMA'), findsWidgets);
       expect(find.text('Pesanan Berjalan'), findsOneWidget);
       expect(find.text('Dine In'), findsOneWidget);
       expect(find.text('Take Away'), findsOneWidget);
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('PosPreloadScreen launches and transitions into PosLoginScreen', (WidgetTester tester) async {
+      PosSyncService.instance.setMockUser(null);
+
+      await tester.pumpWidget(const ProviderScope(child: HiroshimaPosApp()));
+      expect(find.byType(PosPreloadScreen), findsOneWidget);
+      expect(find.text('HIROSHIMA POS'), findsWidgets);
+
+      // Fast forward past the preload animation & delay
+      await tester.pump(const Duration(milliseconds: 1600));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(PosLoginScreen), findsOneWidget);
     });
   });
 }

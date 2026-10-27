@@ -3,13 +3,14 @@
 // Responsive Phone + Tablet (iOS + Android) · Haptic Tactile Keypad · Device Activation
 
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart' show ScaffoldMessenger, SnackBar;
+import 'package:flutter/material.dart' show Colors, ScaffoldMessenger, SnackBar, Theme;
 import 'package:flutter/services.dart';
 import '../../../core/sync/pos_server_config_sheet.dart';
 import '../../../core/sync/pos_sync_service.dart';
 import '../../../core/theme/ios_adaptive.dart';
 import '../../../core/theme/ios_components.dart';
 import '../../../core/theme/ios_tokens.dart';
+import '../../../core/theme/theme_controller.dart';
 import '../../pos/presentation/pos_tablet_screen.dart';
 
 enum LoginMode { pin, email, activation }
@@ -203,49 +204,48 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
   }
 
   void _showCashierPicker() {
+    final cashiers = PosSyncService.instance.cashiers;
+    final branch = PosSyncService.instance.branch;
+    final branchName = (branch['name'] as String?) ?? 'Cabang';
+
     showCupertinoModalPopup<void>(
       context: context,
       builder: (BuildContext ctx) => CupertinoActionSheet(
         title: Text('Pilih Akun Kasir Cabang', style: IOSText.subhead),
         message: Text(
-          'Cabang aktif: ${PosSyncService.instance.branch['name'] ?? 'Hiroshima Cikini'}',
+          'Cabang aktif: $branchName',
           style: IOSText.caption1,
         ),
-        actions: <CupertinoActionSheetAction>[
-          CupertinoActionSheetAction(
-            onPressed: () {
-              setState(() {
-                _selectedCashierUsername = 'kasir_ckn';
-                _selectedCashierName = 'Kasir Cikini';
-                _enteredPin = '';
-              });
-              Navigator.pop(ctx);
-            },
-            child: const Text('Kasir Cikini (HRS-CKN)'),
-          ),
-          CupertinoActionSheetAction(
-            onPressed: () {
-              setState(() {
-                _selectedCashierUsername = 'kasir_tbt';
-                _selectedCashierName = 'Kasir Tebet';
-                _enteredPin = '';
-              });
-              Navigator.pop(ctx);
-            },
-            child: const Text('Kasir Tebet (HRS-TBT)'),
-          ),
-          CupertinoActionSheetAction(
-            onPressed: () {
-              setState(() {
-                _selectedCashierUsername = 'kasir_cld';
-                _selectedCashierName = 'Kasir Cilandak';
-                _enteredPin = '';
-              });
-              Navigator.pop(ctx);
-            },
-            child: const Text('Kasir Cilandak (HRS-CLD)'),
-          ),
-        ],
+        actions: cashiers.isNotEmpty
+            ? cashiers.map((c) {
+                final uName = (c['username'] as String?) ?? 'kasir';
+                final name = (c['name'] as String?) ?? 'Kasir';
+                final role = ((c['role'] as String?) ?? 'cashier').toUpperCase();
+                return CupertinoActionSheetAction(
+                  onPressed: () {
+                    setState(() {
+                      _selectedCashierUsername = uName;
+                      _selectedCashierName = name;
+                      _enteredPin = '';
+                    });
+                    Navigator.pop(ctx);
+                  },
+                  child: Text('$name ($uName) · $role'),
+                );
+              }).toList()
+            : <CupertinoActionSheetAction>[
+                CupertinoActionSheetAction(
+                  onPressed: () {
+                    setState(() {
+                      _selectedCashierUsername = 'kasir';
+                      _selectedCashierName = 'Kasir Operasional';
+                      _enteredPin = '';
+                    });
+                    Navigator.pop(ctx);
+                  },
+                  child: const Text('Kasir Operasional (kasir)'),
+                ),
+              ],
         cancelButton: CupertinoActionSheetAction(
           isDefaultAction: true,
           onPressed: () => Navigator.pop(ctx),
@@ -269,34 +269,50 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
             width: 0.5,
           ),
         ),
-        middle: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 22,
-              height: 22,
-              decoration: const BoxDecoration(
-                color: Color(0xFFDC2626),
-                shape: BoxShape.circle,
-              ),
-              alignment: Alignment.center,
-              child: const Text(
-                'H',
-                style: TextStyle(
-                  color: CupertinoColors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
-                ),
+        leading: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Container(
+            width: 26,
+            height: 26,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(6),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Image.asset(
+              'assets/images/logo_badge.jpg',
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) => Container(
+                color: const Color(0xFFDC2626),
+                alignment: Alignment.center,
+                child: const Text('H', style: TextStyle(color: CupertinoColors.white, fontSize: 12, fontWeight: FontWeight.w900)),
               ),
             ),
-            const SizedBox(width: 8),
-            Text('HIROSHIMA POS', style: IOSText.headline),
-          ],
+          ),
         ),
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => PosServerConfigSheet.show(context),
-          child: const Icon(CupertinoIcons.gear_alt, size: 22),
+        middle: Text(
+          PosSyncService.instance.appName,
+          style: IOSText.headline,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CupertinoButton(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              onPressed: () => ThemeController.instance.toggleTheme(context),
+              child: Icon(
+                Theme.of(context).brightness == Brightness.dark
+                    ? CupertinoIcons.sun_max_fill
+                    : CupertinoIcons.moon_fill,
+                size: 20,
+              ),
+            ),
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: () => PosServerConfigSheet.show(context),
+              child: const Icon(CupertinoIcons.gear_alt, size: 22),
+            ),
+          ],
         ),
       ),
       child: SafeArea(
@@ -348,39 +364,52 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
   Widget _buildBrandHeader() {
     final branchName = PosSyncService.instance.branch['name'] as String? ?? 'Hiroshima Japanese Street Food';
     final branchCode = PosSyncService.instance.branch['code'] as String? ?? 'HRS-CKN';
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Column(
       children: [
         Container(
-          width: 68,
-          height: 68,
+          width: 80,
+          height: 80,
           decoration: BoxDecoration(
-            color: const Color(0xFFDC2626),
-            borderRadius: BorderRadius.circular(18),
+            color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+            borderRadius: BorderRadius.circular(22),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFFDC2626).withValues(alpha: 0.35),
-                blurRadius: 18,
+                color: const Color(0xFFDC2626).withValues(alpha: isDark ? 0.35 : 0.22),
+                blurRadius: 20,
                 offset: const Offset(0, 6),
               ),
             ],
+            border: Border.all(
+              color: isDark ? const Color(0xFF2C2C2E) : const Color(0xFFE2E8F0),
+              width: 1.2,
+            ),
           ),
-          alignment: Alignment.center,
-          child: const Text(
-            'H',
-            style: TextStyle(
-              color: CupertinoColors.white,
-              fontSize: 34,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -1,
+          clipBehavior: Clip.antiAlias,
+          child: Image.asset(
+            'assets/images/logo_badge.jpg',
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) => Container(
+              color: const Color(0xFFDC2626),
+              alignment: Alignment.center,
+              child: const Text(
+                'H',
+                style: TextStyle(
+                  color: CupertinoColors.white,
+                  fontSize: 34,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -1,
+                ),
+              ),
             ),
           ),
         ),
         const SizedBox(height: IOSSpacing.sm),
-        const Text(
-          'HIROSHIMA',
-          style: TextStyle(
-            fontSize: 24,
+        Text(
+          PosSyncService.instance.appName,
+          style: const TextStyle(
+            fontSize: 22,
             fontWeight: FontWeight.w800,
             letterSpacing: -0.5,
           ),

@@ -52,22 +52,22 @@ SliverGridDelegateWithFixedCrossAxisCount iosProductGridDelegate({
     final catalogWidth = width * 0.65;
     if (catalogWidth >= 800) {
       columns = 4;
-      aspectRatio = 0.84;
+      aspectRatio = 0.76;
     } else if (catalogWidth >= 520) {
       columns = 3;
-      aspectRatio = 0.82;
+      aspectRatio = 0.74;
     } else {
       columns = 2;
-      aspectRatio = 0.80;
+      aspectRatio = 0.72;
     }
   } else {
     // Phone or full width
     if (width >= 600) {
       columns = 3;
-      aspectRatio = 0.82;
+      aspectRatio = 0.75;
     } else {
       columns = 2;
-      aspectRatio = 0.78;
+      aspectRatio = 0.71;
     }
   }
 

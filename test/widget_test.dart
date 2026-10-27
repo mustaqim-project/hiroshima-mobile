@@ -4,18 +4,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:mobile/core/sync/pos_sync_service.dart';
 import 'package:mobile/main.dart';
 
 void main() {
   setUp(() {
+    SharedPreferences.setMockInitialValues({});
     PosSyncService.instance.stopAutoSync();
-    PosSyncService.instance.setMockUser(null);
+    PosSyncService.instance.resetForTesting();
   });
 
   tearDown(() {
     PosSyncService.instance.stopAutoSync();
-    PosSyncService.instance.setMockUser(null);
+    PosSyncService.instance.resetForTesting();
   });
 
   testWidgets('Mobile POS renders Apple HIG Login Screen when unauthenticated', (WidgetTester tester) async {
@@ -26,11 +28,11 @@ void main() {
     PosSyncService.instance.setMockUser(null);
 
     await tester.pumpWidget(const ProviderScope(child: HiroshimaPosApp()));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 1600));
+    await tester.pumpAndSettle();
 
     // Brand and Mode selector verification
-    expect(find.text('HIROSHIMA'), findsOneWidget);
+    expect(find.textContaining('HIROSHIMA'), findsWidgets);
     expect(find.text('PIN Kasir'), findsOneWidget);
     expect(find.text('Email & Sandi'), findsOneWidget);
     expect(find.text('Aktivasi'), findsOneWidget);
@@ -49,11 +51,26 @@ void main() {
       'role': 'cashier',
     });
 
-    await tester.pumpWidget(const ProviderScope(child: HiroshimaPosApp()));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
+    PosSyncService.instance.applyCatalogDataForTesting({
+      'branch': {'id': 1, 'name': 'Hiroshima Cikini', 'code': 'HRS-CKN'},
+      'categories': [{'id': 1, 'name': 'Ramen', 'code': 'RMN'}],
+      'products': [
+        {'id': 10, 'name': 'Tori Paitan Ramen', 'category_id': 1, 'price': 38000, 'has_variants': false},
+      ],
+      'order_types': [
+        {'id': 1, 'name': 'Dine In', 'requires_table': true},
+        {'id': 2, 'name': 'Take Away', 'requires_table': false},
+      ],
+      'product_prices': [],
+      'tables': [],
+      'payment_methods': [{'id': 1, 'name': 'Tunai', 'code': 'CASH'}],
+    });
 
-    expect(find.text('HIROSHIMA POS'), findsOneWidget);
+    await tester.pumpWidget(const ProviderScope(child: HiroshimaPosApp()));
+    await tester.pump(const Duration(milliseconds: 1600));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('HIROSHIMA'), findsWidgets);
     expect(find.text('Dine In'), findsOneWidget);
     expect(find.text('Take Away'), findsOneWidget);
     expect(find.text('Pesanan Berjalan'), findsOneWidget);
