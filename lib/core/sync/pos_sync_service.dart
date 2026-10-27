@@ -740,6 +740,35 @@ class PosSyncService extends ChangeNotifier {
     }
   }
 
+  /// Void a completed transaction (requires 6-digit Supervisor PIN Void and reason)
+  Future<Map<String, dynamic>> voidOrder(int orderId, String pinVoid, String reason) async {
+    try {
+      final uri = Uri.parse('$baseUrl/orders/$orderId/void');
+      final response = await http.post(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $authToken',
+        },
+        body: jsonEncode({
+          'pin_void': pinVoid,
+          'reason': reason,
+        }),
+      ).timeout(const Duration(seconds: 6));
+
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200 && body['success'] == true) {
+        await fetchCurrentShift();
+        notifyListeners();
+        return {'success': true, 'message': body['message']};
+      }
+      return {'success': false, 'message': body['message'] ?? 'Gagal melakukan void transaksi.'};
+    } catch (e) {
+      return {'success': false, 'message': 'Gagal menghubungi server: $e'};
+    }
+  }
+
   Future<void> _loadSavedBaseUrl() async {
     try {
       final prefs = await SharedPreferences.getInstance();
