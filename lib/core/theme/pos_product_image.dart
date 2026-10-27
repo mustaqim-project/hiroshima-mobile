@@ -15,7 +15,7 @@ class PosProductImage extends StatelessWidget {
     required this.imagePath,
     this.width,
     this.height,
-    this.fit = BoxFit.contain,
+    this.fit = BoxFit.cover,
     this.borderRadius,
     this.category,
   });
@@ -35,6 +35,7 @@ class PosProductImage extends StatelessWidget {
         height: height,
         fit: fit,
         alignment: Alignment.center,
+        filterQuality: FilterQuality.medium,
         loadingBuilder: (context, child, loadingProgress) {
           if (loadingProgress == null) return child;
           return Container(

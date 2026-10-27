@@ -1836,45 +1836,60 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Top Image Container with Overlaid Badges (Uncropped, AspectRatio 1.45)
+            // Top Image Container with Overlaid Badges (Edge-to-Edge Full Bleed, AspectRatio 1.35)
             AspectRatio(
-              aspectRatio: 1.45,
+              aspectRatio: 1.35,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  Container(
-                    color: isDark ? const Color(0xFF242426) : const Color(0xFFF8FAFC),
-                    padding: const EdgeInsets.all(4),
-                    child: PosProductImage(
-                      imagePath: imagePath,
-                      width: double.infinity,
-                      height: double.infinity,
-                      fit: BoxFit.contain,
-                      category: category,
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
+                  PosProductImage(
+                    imagePath: imagePath,
+                    width: double.infinity,
+                    height: double.infinity,
+                    fit: BoxFit.cover,
+                    category: category,
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
+                  ),
+                  // Subtle top-to-bottom gradient scrim for badge legibility and food vibrancy
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.black.withValues(alpha: 0.38),
+                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.12),
+                          ],
+                          stops: const [0.0, 0.45, 1.0],
+                        ),
+                      ),
                     ),
                   ),
                   // Category Pill (Top-Left)
                   Positioned(
-                    top: 6,
-                    left: 6,
+                    top: 8,
+                    left: 8,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
                       decoration: BoxDecoration(
-                        color: isDark ? CupertinoColors.black.withValues(alpha: 0.75) : CupertinoColors.white.withValues(alpha: 0.95),
+                        color: Colors.black.withValues(alpha: 0.65),
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(
-                          color: (isDark ? CupertinoColors.white : CupertinoColors.black).withValues(alpha: 0.08),
+                          color: Colors.white.withValues(alpha: 0.18),
                           width: 0.5,
                         ),
                       ),
                       child: Text(
                         category,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 9.5,
-                          color: isDark ? CupertinoColors.white : const Color(0xFF1E293B),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 10,
+                          color: CupertinoColors.white,
                           decoration: TextDecoration.none,
+                          letterSpacing: 0.2,
                         ),
                       ),
                     ),
@@ -1882,18 +1897,24 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                   // Variants / Custom Modifiers Pill (Top-Right)
                   if (hasVariants)
                     Positioned(
-                      top: 6,
-                      right: 6,
+                      top: 8,
+                      right: 8,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                         decoration: BoxDecoration(
                           color: const Color(0xFF007AFF),
                           borderRadius: BorderRadius.circular(6),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.3),
+                              blurRadius: 4,
+                            ),
+                          ],
                         ),
                         child: const Text(
                           'Varian',
                           style: TextStyle(
-                            fontSize: 9.5,
+                            fontSize: 10,
                             fontWeight: FontWeight.bold,
                             color: CupertinoColors.white,
                             decoration: TextDecoration.none,
@@ -1903,18 +1924,24 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                     )
                   else if (modifierGroups.isNotEmpty)
                     Positioned(
-                      top: 6,
-                      right: 6,
+                      top: 8,
+                      right: 8,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                         decoration: BoxDecoration(
                           color: const Color(0xFFFF9500),
                           borderRadius: BorderRadius.circular(6),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.3),
+                              blurRadius: 4,
+                            ),
+                          ],
                         ),
                         child: const Text(
                           'Kustom',
                           style: TextStyle(
-                            fontSize: 9.5,
+                            fontSize: 10,
                             fontWeight: FontWeight.bold,
                             color: CupertinoColors.white,
                             decoration: TextDecoration.none,
