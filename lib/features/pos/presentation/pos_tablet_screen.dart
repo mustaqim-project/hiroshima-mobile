@@ -10,7 +10,6 @@ import '../../../core/pricing/order_calculator.dart';
 import '../../../core/printing/pos_printer_sheet.dart';
 import '../../../core/printing/thermal_printer_service.dart';
 import '../../../core/security/pin_verifier.dart';
-import '../../../core/sync/pos_server_config_sheet.dart';
 import '../../../core/sync/pos_sync_service.dart';
 import '../../../core/theme/ios_adaptive.dart';
 import '../../../core/theme/ios_components.dart';
@@ -1044,20 +1043,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
               ],
             ),
           ),
-          CupertinoActionSheetAction(
-            onPressed: () {
-              Navigator.pop(ctx);
-              PosServerConfigSheet.show(context);
-            },
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(CupertinoIcons.cloud_download, size: 20),
-                SizedBox(width: 8),
-                Text('Pengaturan Server Backend'),
-              ],
-            ),
-          ),
+
           CupertinoActionSheetAction(
             onPressed: () {
               Navigator.pop(ctx);
@@ -1306,13 +1292,6 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
               ),
               const SizedBox(width: 6),
 
-              // Backend Server Configuration Button
-              IOSIconButton(
-                icon: CupertinoIcons.cloud_download,
-                semanticLabel: 'Pengaturan Server Backend',
-                onPressed: () => PosServerConfigSheet.show(context),
-              ),
-              const SizedBox(width: 8),
             ] else ...[
               // On phone, keep direct printer access
               IOSIconButton(
@@ -1491,13 +1470,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                                   variant: IOSButtonVariant.tinted,
                                   onPressed: () => syncService.fetchCatalog(),
                                 ),
-                                const SizedBox(width: 8),
-                                IOSButton(
-                                  label: 'Atur URL Server',
-                                  icon: CupertinoIcons.gear,
-                                  variant: IOSButtonVariant.plain,
-                                  onPressed: () => PosServerConfigSheet.show(context),
-                                ),
+
                               ],
                             ),
                           ],

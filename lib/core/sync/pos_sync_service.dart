@@ -587,13 +587,13 @@ class PosSyncService extends ChangeNotifier {
   Future<void> _loadSavedBaseUrl() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final savedUrl = prefs.getString(_prefKeyBaseUrl);
-      if (savedUrl != null && savedUrl.trim().isNotEmpty) {
-        baseUrl = savedUrl.trim();
+      if (prefs.containsKey(_prefKeyBaseUrl)) {
+        await prefs.remove(_prefKeyBaseUrl);
       }
     } catch (_) {
       // In isolated tests without binding, keep defaultBaseUrl gracefully
     }
+    baseUrl = defaultBaseUrl;
   }
 
   /// Change and persist Backend API Base URL

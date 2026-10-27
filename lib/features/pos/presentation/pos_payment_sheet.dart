@@ -171,6 +171,7 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
       'payments': [
         {
           'payment_method_id': _selectedPaymentMethod['id'] ?? 1,
+          'payment_method_name': _selectedPaymentMethod['name'] ?? 'Tunai (Cash)',
           'amount': _isCash ? _cashGiven : calc.totalAmount,
         }
       ],

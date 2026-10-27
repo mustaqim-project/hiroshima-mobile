@@ -5,7 +5,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Colors, Theme;
 import 'package:flutter/services.dart';
-import '../../../core/sync/pos_server_config_sheet.dart';
 import '../../../core/sync/pos_sync_service.dart';
 import '../../../core/theme/ios_adaptive.dart';
 import '../../../core/theme/ios_components.dart';
@@ -205,25 +204,15 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
           style: IOSText.headline,
           overflow: TextOverflow.ellipsis,
         ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CupertinoButton(
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              onPressed: () => ThemeController.instance.toggleTheme(context),
-              child: Icon(
-                Theme.of(context).brightness == Brightness.dark
-                    ? CupertinoIcons.sun_max_fill
-                    : CupertinoIcons.moon_fill,
-                size: 20,
-              ),
-            ),
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: () => PosServerConfigSheet.show(context),
-              child: const Icon(CupertinoIcons.gear_alt, size: 22),
-            ),
-          ],
+        trailing: CupertinoButton(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          onPressed: () => ThemeController.instance.toggleTheme(context),
+          child: Icon(
+            Theme.of(context).brightness == Brightness.dark
+                ? CupertinoIcons.sun_max_fill
+                : CupertinoIcons.moon_fill,
+            size: 20,
+          ),
         ),
       ),
       child: SafeArea(
