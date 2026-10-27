@@ -24,20 +24,21 @@ void main() {
   });
 
   group('API Connectivity & Contract Tests', () {
-    test('Default API Base URL adapts to Android Emulator (10.0.2.2) vs Desktop (127.0.0.1)', () {
-      expect(syncService.baseUrl, contains('/api/v1'));
-      expect(syncService.serverBaseUrl, isNot(contains('/api/v1')));
+    test('Default API Base URL defaults to production domain hiroshima.web.id', () {
+      expect(PosSyncService.productionBaseUrl, 'https://hiroshima.web.id/api/v1');
+      expect(syncService.baseUrl, 'https://hiroshima.web.id/api/v1');
+      expect(syncService.serverBaseUrl, 'https://hiroshima.web.id');
     });
 
     test('Custom Backend URL sanitization automatically ensures /api/v1 path', () async {
       await syncService.setBaseUrl('http://192.168.1.100:8000');
       expect(syncService.baseUrl, 'http://192.168.1.100:8000/api/v1');
 
-      await syncService.setBaseUrl('http://pos.hiroshima.co.id/');
-      expect(syncService.baseUrl, 'http://pos.hiroshima.co.id/api/v1');
+      await syncService.setBaseUrl('https://hiroshima.web.id/');
+      expect(syncService.baseUrl, 'https://hiroshima.web.id/api/v1');
 
       // Reset to default
-      await syncService.setBaseUrl('http://127.0.0.1:8000/api/v1');
+      await syncService.setBaseUrl(PosSyncService.defaultBaseUrl);
     });
 
     test('Device Activation Contract formats ACT-XXXX code correctly', () async {

@@ -18,6 +18,7 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     PosSyncService.instance.stopAutoSync();
+    PosSyncService.instance.setMockUser(null);
   });
 
   tearDown(() {

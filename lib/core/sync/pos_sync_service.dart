@@ -25,13 +25,20 @@ class PosSyncService extends ChangeNotifier {
   static const String _prefKeyAuthToken = 'hiroshima_pos_auth_token';
   static const String _prefKeyCurrentUser = 'hiroshima_pos_current_user';
 
-  // Smart defaults for local development
-  // Android Emulator maps host machine to 10.0.2.2; desktop/web uses 127.0.0.1:8000 or 9185
+  /// Official production API base URL on hiroshima.web.id
+  static const String productionBaseUrl = 'https://hiroshima.web.id/api/v1';
+
+  /// Optional build-time override via `--dart-define=API_BASE_URL=...`
+  static const String _envBaseUrl = String.fromEnvironment('API_BASE_URL');
+
+  /// Default API Base URL:
+  /// Always points to https://hiroshima.web.id/api/v1 by default,
+  /// unless overridden via compile-time flag or saved in settings.
   static String get defaultBaseUrl {
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-      return 'http://10.0.2.2:8000/api/v1';
+    if (_envBaseUrl.isNotEmpty) {
+      return _envBaseUrl;
     }
-    return 'http://127.0.0.1:8000/api/v1';
+    return productionBaseUrl;
   }
 
   String baseUrl = defaultBaseUrl;

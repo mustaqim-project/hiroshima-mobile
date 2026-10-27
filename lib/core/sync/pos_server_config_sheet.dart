@@ -158,7 +158,7 @@ class _PosServerConfigSheetState extends State<PosServerConfigSheet> {
                       children: [
                         CupertinoTextField(
                           controller: _urlController,
-                          placeholder: 'http://127.0.0.1:8000/api/v1',
+                          placeholder: 'https://hiroshima.web.id/api/v1',
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                           decoration: null,
                           style: IOSText.body,
@@ -177,6 +177,13 @@ class _PosServerConfigSheetState extends State<PosServerConfigSheet> {
                       spacing: 8,
                       runSpacing: 8,
                       children: [
+                        CupertinoButton(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          color: IOSColors.secondaryGroupedBackground.resolveFrom(context),
+                          borderRadius: BorderRadius.circular(10),
+                          onPressed: () => _applyPreset('https://hiroshima.web.id/api/v1'),
+                          child: Text('Produksi (hiroshima.web.id)', style: IOSText.caption1.copyWith(color: IOSColors.accent.resolveFrom(context), fontWeight: FontWeight.w600)),
+                        ),
                         CupertinoButton(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                           color: IOSColors.secondaryGroupedBackground.resolveFrom(context),

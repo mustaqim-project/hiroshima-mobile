@@ -10,6 +10,7 @@ import 'package:mobile/main.dart';
 void main() {
   setUp(() {
     PosSyncService.instance.stopAutoSync();
+    PosSyncService.instance.setMockUser(null);
   });
 
   tearDown(() {
