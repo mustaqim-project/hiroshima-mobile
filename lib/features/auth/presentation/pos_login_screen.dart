@@ -173,9 +173,9 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
       backgroundColor: IOSColors.groupedBackground.resolveFrom(context),
       navigationBar: CupertinoNavigationBar(
         backgroundColor: CupertinoColors.systemBackground.resolveFrom(context).withValues(alpha: 0.85),
-        border: const Border(
+        border: Border(
           bottom: BorderSide(
-            color: Color(0x333C3C43),
+            color: CupertinoColors.separator.resolveFrom(context).withValues(alpha: 0.4),
             width: 0.5,
           ),
         ),
@@ -201,7 +201,9 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
         ),
         middle: Text(
           PosSyncService.instance.appName,
-          style: IOSText.headline,
+          style: IOSText.headline.copyWith(
+            color: CupertinoColors.label.resolveFrom(context),
+          ),
           overflow: TextOverflow.ellipsis,
         ),
         trailing: CupertinoButton(
@@ -212,6 +214,9 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
                 ? CupertinoIcons.sun_max_fill
                 : CupertinoIcons.moon_fill,
             size: 20,
+            color: Theme.of(context).brightness == Brightness.dark
+                ? const Color(0xFFFFD60A)
+                : const Color(0xFF475569),
           ),
         ),
       ),
@@ -354,17 +359,32 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
       width: double.infinity,
       child: CupertinoSlidingSegmentedControl<LoginMode>(
         groupValue: _selectedMode,
-        thumbColor: CupertinoColors.white,
+        thumbColor: CupertinoDynamicColor.withBrightness(
+          color: CupertinoColors.white,
+          darkColor: const Color(0xFF636366),
+        ).resolveFrom(context),
         backgroundColor: CupertinoColors.tertiarySystemFill.resolveFrom(context),
         padding: const EdgeInsets.all(3),
         children: {
-          LoginMode.pin: const Padding(
-            padding: EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-            child: Text('Username & PIN', style: TextStyle(fontWeight: FontWeight.w600)),
+          LoginMode.pin: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+            child: Text(
+              'Username & PIN',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: CupertinoColors.label.resolveFrom(context),
+              ),
+            ),
           ),
-          LoginMode.email: const Padding(
-            padding: EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-            child: Text('Email & Password', style: TextStyle(fontWeight: FontWeight.w600)),
+          LoginMode.email: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+            child: Text(
+              'Email & Password',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: CupertinoColors.label.resolveFrom(context),
+              ),
+            ),
           ),
         },
         onValueChanged: (val) {
@@ -382,23 +402,31 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
   }
 
   Widget _buildErrorAlert(String message) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFFEE2E2),
+        color: isDark ? const Color(0xFF451A1A) : const Color(0xFFFEE2E2),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFFCA5A5), width: 0.5),
+        border: Border.all(
+          color: isDark ? const Color(0xFF7F1D1D) : const Color(0xFFFCA5A5),
+          width: 0.5,
+        ),
       ),
       child: Row(
         children: [
-          const Icon(CupertinoIcons.exclamationmark_triangle_fill, size: 18, color: Color(0xFFDC2626)),
+          Icon(
+            CupertinoIcons.exclamationmark_triangle_fill,
+            size: 18,
+            color: isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626),
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               message,
-              style: const TextStyle(
-                color: Color(0xFF991B1B),
+              style: TextStyle(
+                color: isDark ? const Color(0xFFFECACA) : const Color(0xFF991B1B),
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
               ),
@@ -430,9 +458,17 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
           CupertinoTextField(
             controller: _usernameController,
             placeholder: 'Masukkan username kasir',
-            prefix: const Padding(
-              padding: EdgeInsets.only(left: 12),
-              child: Icon(CupertinoIcons.person_crop_circle, size: 20, color: CupertinoColors.systemGrey),
+            placeholderStyle: TextStyle(
+              color: CupertinoColors.placeholderText.resolveFrom(context),
+              fontSize: 15,
+            ),
+            style: TextStyle(
+              color: CupertinoColors.label.resolveFrom(context),
+              fontSize: 15,
+            ),
+            prefix: Padding(
+              padding: const EdgeInsets.only(left: 12),
+              child: Icon(CupertinoIcons.person_crop_circle, size: 20, color: CupertinoColors.secondaryLabel.resolveFrom(context)),
             ),
             clearButtonMode: OverlayVisibilityMode.editing,
             textInputAction: TextInputAction.next,
@@ -550,7 +586,10 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
         borderRadius: BorderRadius.circular(16),
         color: isSpecial
             ? CupertinoColors.tertiarySystemFill.resolveFrom(context)
-            : CupertinoColors.systemBackground.resolveFrom(context),
+            : CupertinoDynamicColor.withBrightness(
+                color: CupertinoColors.systemBackground,
+                darkColor: const Color(0xFF2C2C2E),
+              ).resolveFrom(context),
         onPressed: () {
           if (keyChar == 'C') {
             _clearPin();
@@ -611,14 +650,22 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Username atau Email', style: IOSText.caption1),
+          Text('Username atau Email', style: IOSText.caption1.copyWith(color: CupertinoColors.label.resolveFrom(context))),
           const SizedBox(height: 6),
           CupertinoTextField(
             controller: _emailController,
             placeholder: 'Masukkan email atau username',
-            prefix: const Padding(
-              padding: EdgeInsets.only(left: 12),
-              child: Icon(CupertinoIcons.mail, size: 20, color: CupertinoColors.systemGrey),
+            placeholderStyle: TextStyle(
+              color: CupertinoColors.placeholderText.resolveFrom(context),
+              fontSize: 15,
+            ),
+            style: TextStyle(
+              color: CupertinoColors.label.resolveFrom(context),
+              fontSize: 15,
+            ),
+            prefix: Padding(
+              padding: const EdgeInsets.only(left: 12),
+              child: Icon(CupertinoIcons.mail, size: 20, color: CupertinoColors.secondaryLabel.resolveFrom(context)),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
             decoration: BoxDecoration(
@@ -628,15 +675,23 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
           ),
           const SizedBox(height: IOSSpacing.md),
 
-          Text('Kata Sandi', style: IOSText.caption1),
+          Text('Kata Sandi', style: IOSText.caption1.copyWith(color: CupertinoColors.label.resolveFrom(context))),
           const SizedBox(height: 6),
           CupertinoTextField(
             controller: _passwordController,
             obscureText: _obscurePassword,
             placeholder: 'Masukkan kata sandi',
-            prefix: const Padding(
-              padding: EdgeInsets.only(left: 12),
-              child: Icon(CupertinoIcons.lock, size: 20, color: CupertinoColors.systemGrey),
+            placeholderStyle: TextStyle(
+              color: CupertinoColors.placeholderText.resolveFrom(context),
+              fontSize: 15,
+            ),
+            style: TextStyle(
+              color: CupertinoColors.label.resolveFrom(context),
+              fontSize: 15,
+            ),
+            prefix: Padding(
+              padding: const EdgeInsets.only(left: 12),
+              child: Icon(CupertinoIcons.lock, size: 20, color: CupertinoColors.secondaryLabel.resolveFrom(context)),
             ),
             suffix: CupertinoButton(
               padding: const EdgeInsets.only(right: 12),
@@ -644,7 +699,7 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
               child: Icon(
                 _obscurePassword ? CupertinoIcons.eye : CupertinoIcons.eye_slash,
                 size: 20,
-                color: CupertinoColors.systemGrey,
+                color: CupertinoColors.secondaryLabel.resolveFrom(context),
               ),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),

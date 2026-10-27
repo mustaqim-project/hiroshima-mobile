@@ -58,6 +58,12 @@ class HiroshimaPosApp extends StatelessWidget {
               thickness: 0.5,
               space: 1,
             ),
+            snackBarTheme: SnackBarThemeData(
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              backgroundColor: const Color(0xFF1E293B),
+              contentTextStyle: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500),
+            ),
           ),
 
           // Dark Theme (Apple HIG OLED Black & Elevated Surface)
@@ -78,6 +84,12 @@ class HiroshimaPosApp extends StatelessWidget {
               color: Color(0x54545865), // CupertinoColors.darkSeparator
               thickness: 0.5,
               space: 1,
+            ),
+            snackBarTheme: SnackBarThemeData(
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              backgroundColor: const Color(0xFF2C2C2E),
+              contentTextStyle: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500),
             ),
           ),
 

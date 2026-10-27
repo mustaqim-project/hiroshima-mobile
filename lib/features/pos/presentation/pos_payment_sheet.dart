@@ -301,13 +301,13 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
                 children: [
-                  const Icon(CupertinoIcons.creditcard_fill, size: 24, color: IOSColors.accentLight),
+                  Icon(CupertinoIcons.creditcard_fill, size: 24, color: IOSColors.accent.resolveFrom(context)),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Penyelesaian Pembayaran', style: IOSText.headline),
+                        Text('Penyelesaian Pembayaran', style: IOSText.headline.copyWith(color: IOSColors.label.resolveFrom(context))),
                         Text(
                           '${widget.orderType}${widget.tableNo != null ? " • Meja ${widget.tableNo}" : ""}',
                           style: IOSText.footnote.copyWith(
@@ -510,9 +510,9 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
                             keyboardType: TextInputType.number,
                             prefix: Padding(
                               padding: const EdgeInsets.only(left: 12),
-                              child: Text('Rp ', style: IOSText.headline),
+                              child: Text('Rp ', style: IOSText.headline.copyWith(color: IOSColors.label.resolveFrom(context))),
                             ),
-                            style: IOSText.title2.copyWith(fontWeight: FontWeight.bold),
+                            style: IOSText.title2.copyWith(fontWeight: FontWeight.bold, color: IOSColors.label.resolveFrom(context)),
                             decoration: null,
                             onChanged: (val) {
                               setState(() {

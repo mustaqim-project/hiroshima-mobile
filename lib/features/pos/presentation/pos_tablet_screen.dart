@@ -328,6 +328,14 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                 controller: textController,
                 keyboardType: TextInputType.number,
                 placeholder: 'Nominal Potongan (Rp)',
+                placeholderStyle: TextStyle(
+                  color: CupertinoColors.placeholderText.resolveFrom(context),
+                  fontSize: 14,
+                ),
+                style: TextStyle(
+                  color: CupertinoColors.label.resolveFrom(context),
+                  fontSize: 15,
+                ),
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               ),
             ],
@@ -395,7 +403,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Alasan: $reason', style: const TextStyle(fontWeight: FontWeight.bold, color: IOSColors.accentLight)),
+              Text('Alasan: $reason', style: TextStyle(fontWeight: FontWeight.bold, color: IOSColors.accent.resolveFrom(context))),
               const SizedBox(height: 8),
               const Text('Masukkan 6-digit PIN Supervisor / Kepala Cabang:'),
               const SizedBox(height: 12),
@@ -405,6 +413,14 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                 keyboardType: TextInputType.number,
                 maxLength: 6,
                 placeholder: 'PIN 6 Angka',
+                placeholderStyle: TextStyle(
+                  color: CupertinoColors.placeholderText.resolveFrom(context),
+                  fontSize: 14,
+                ),
+                style: TextStyle(
+                  color: CupertinoColors.label.resolveFrom(context),
+                  fontSize: 15,
+                ),
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               ),
             ],
@@ -552,12 +568,28 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
               CupertinoTextField(
                 controller: refController,
                 placeholder: 'Label / Nama Pemesan (cth: Meja 4 / Pak Budi)',
+                placeholderStyle: TextStyle(
+                  color: CupertinoColors.placeholderText.resolveFrom(context),
+                  fontSize: 13,
+                ),
+                style: TextStyle(
+                  color: CupertinoColors.label.resolveFrom(context),
+                  fontSize: 14,
+                ),
                 padding: const EdgeInsets.all(10),
               ),
               const SizedBox(height: 8),
               CupertinoTextField(
                 controller: notesController,
                 placeholder: 'Catatan tambahan (opsional)',
+                placeholderStyle: TextStyle(
+                  color: CupertinoColors.placeholderText.resolveFrom(context),
+                  fontSize: 13,
+                ),
+                style: TextStyle(
+                  color: CupertinoColors.label.resolveFrom(context),
+                  fontSize: 14,
+                ),
                 padding: const EdgeInsets.all(10),
               ),
             ],
@@ -662,9 +694,9 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                       children: [
                         Row(
                           children: [
-                            const Icon(CupertinoIcons.pause_circle_fill, color: Color(0xFFD97706), size: 22),
+                            Icon(CupertinoIcons.pause_circle_fill, color: IOSColors.warning.resolveFrom(context), size: 22),
                             const SizedBox(width: 8),
-                            Text('Daftar Transaksi Ditahan (Hold Bill)', style: IOSText.headline),
+                            Text('Daftar Transaksi Ditahan (Hold Bill)', style: IOSText.headline.copyWith(color: IOSColors.label.resolveFrom(context))),
                           ],
                         ),
                         CupertinoButton(
@@ -737,12 +769,12 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                                           children: [
                                             CupertinoButton(
                                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                              color: CupertinoColors.systemRed.withValues(alpha: 0.12),
+                                              color: CupertinoColors.systemRed.resolveFrom(context).withValues(alpha: 0.12),
                                               borderRadius: BorderRadius.circular(8),
                                               onPressed: () {
                                                 _promptCancelHoldBill(bill['id'], setModalState);
                                               },
-                                              child: const Text('Batalkan', style: TextStyle(color: CupertinoColors.systemRed, fontSize: 13, fontWeight: FontWeight.bold)),
+                                              child: Text('Batalkan', style: TextStyle(color: CupertinoColors.systemRed.resolveFrom(context), fontSize: 13, fontWeight: FontWeight.bold)),
                                             ),
                                             const SizedBox(width: 8),
                                             CupertinoButton(
@@ -966,14 +998,14 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 if (isCurrent) ...[
-                  const Icon(CupertinoIcons.checkmark_alt, size: 18, color: Color(0xFF16A34A)),
+                  Icon(CupertinoIcons.checkmark_alt, size: 18, color: IOSColors.success.resolveFrom(context)),
                   const SizedBox(width: 8),
                 ],
                 Text(
                   '$name ($code)',
                   style: TextStyle(
                     fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
-                    color: isCurrent ? const Color(0xFF16A34A) : null,
+                    color: isCurrent ? IOSColors.success.resolveFrom(context) : null,
                   ),
                 ),
               ],
@@ -1006,12 +1038,12 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                 Navigator.pop(ctx);
                 _showBranchPicker(context);
               },
-              child: const Row(
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(CupertinoIcons.arrow_2_squarepath, size: 20, color: Color(0xFFDC2626)),
-                  SizedBox(width: 8),
-                  Text('Ganti Cabang Operasional', style: TextStyle(fontWeight: FontWeight.w600, color: Color(0xFFDC2626))),
+                  Icon(CupertinoIcons.arrow_2_squarepath, size: 20, color: IOSColors.accent.resolveFrom(context)),
+                  const SizedBox(width: 8),
+                  Text('Ganti Cabang Operasional', style: TextStyle(fontWeight: FontWeight.w600, color: IOSColors.accent.resolveFrom(context))),
                 ],
               ),
             ),
@@ -1143,11 +1175,11 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: PosSyncService.instance.canSwitchBranch
-                        ? const Color(0xFFDC2626).withValues(alpha: 0.12)
+                        ? IOSColors.accent.resolveFrom(context).withValues(alpha: 0.12)
                         : IOSColors.systemFill.resolveFrom(context),
                     borderRadius: BorderRadius.circular(12),
                     border: PosSyncService.instance.canSwitchBranch
-                        ? Border.all(color: const Color(0xFFDC2626).withValues(alpha: 0.35), width: 0.8)
+                        ? Border.all(color: IOSColors.accent.resolveFrom(context).withValues(alpha: 0.35), width: 0.8)
                         : null,
                   ),
                   child: Row(
@@ -1156,7 +1188,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                         CupertinoIcons.building_2_fill,
                         size: 12,
                         color: PosSyncService.instance.canSwitchBranch
-                            ? const Color(0xFFDC2626)
+                            ? IOSColors.accent.resolveFrom(context)
                             : IOSColors.secondaryLabel.resolveFrom(context),
                       ),
                       const SizedBox(width: 4),
@@ -1164,12 +1196,12 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                         _branchName,
                         style: IOSText.caption1.copyWith(
                           fontWeight: FontWeight.w600,
-                          color: PosSyncService.instance.canSwitchBranch ? const Color(0xFFDC2626) : null,
+                          color: PosSyncService.instance.canSwitchBranch ? IOSColors.accent.resolveFrom(context) : null,
                         ),
                       ),
                       if (PosSyncService.instance.canSwitchBranch) ...[
                         const SizedBox(width: 4),
-                        const Icon(CupertinoIcons.chevron_down, size: 10, color: Color(0xFFDC2626)),
+                        Icon(CupertinoIcons.chevron_down, size: 10, color: IOSColors.accent.resolveFrom(context)),
                       ],
                     ],
                   ),
@@ -1266,7 +1298,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
               IOSIconButton(
                 icon: CupertinoIcons.pause_circle_fill,
                 semanticLabel: 'Daftar Transaksi Ditahan (Hold Bill)',
-                color: syncService.heldOrders.isNotEmpty ? const Color(0xFFD97706) : CupertinoColors.systemGrey,
+                color: syncService.heldOrders.isNotEmpty ? IOSColors.warning.resolveFrom(context) : CupertinoColors.systemGrey,
                 badge: syncService.heldOrders.isNotEmpty ? '${syncService.heldOrders.length}' : null,
                 onPressed: _openHoldBillsModal,
               ),
@@ -1276,7 +1308,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
               IOSIconButton(
                 icon: CupertinoIcons.money_dollar_circle_fill,
                 semanticLabel: 'Kelola Shift Kasir',
-                color: syncService.hasActiveShift ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+                color: syncService.hasActiveShift ? IOSColors.success.resolveFrom(context) : IOSColors.accent.resolveFrom(context),
                 badge: syncService.hasActiveShift ? 'SHIFT' : 'TUTUP',
                 onPressed: () => PosShiftSheet.show(context),
               ),
@@ -1321,12 +1353,15 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(CupertinoIcons.person_crop_circle_fill, size: 16, color: Color(0xFFDC2626)),
+                    Icon(CupertinoIcons.person_crop_circle_fill, size: 16, color: IOSColors.accent.resolveFrom(context)),
                     if (isTablet) ...[
                       const SizedBox(width: 6),
                       Text(
                         PosSyncService.instance.currentUser?['name'] ?? 'Kasir',
-                        style: IOSText.caption1.copyWith(fontWeight: FontWeight.w600),
+                        style: IOSText.caption1.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: CupertinoColors.label.resolveFrom(context),
+                        ),
                       ),
                       const SizedBox(width: 4),
                       const Icon(CupertinoIcons.chevron_down, size: 11, color: CupertinoColors.systemGrey),
@@ -1435,13 +1470,16 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
         Expanded(
           child: products.isEmpty
               ? (syncService.isSyncing
-                  ? const Center(
+                  ? Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          CupertinoActivityIndicator(radius: 14),
-                          SizedBox(height: 12),
-                          Text('Mengambil data katalog dari backend...'),
+                          const CupertinoActivityIndicator(radius: 14),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Mengambil data katalog dari backend...',
+                            style: IOSText.footnote.copyWith(color: IOSColors.secondaryLabel.resolveFrom(context)),
+                          ),
                         ],
                       ),
                     )
@@ -1453,7 +1491,10 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                           children: [
                             Icon(CupertinoIcons.tray, size: 54, color: IOSColors.tertiaryLabel.resolveFrom(context)),
                             const SizedBox(height: 12),
-                            Text('Tidak ada menu ditemukan dari backend', style: IOSText.headline),
+                            Text(
+                              'Tidak ada menu ditemukan dari backend',
+                              style: IOSText.headline.copyWith(color: IOSColors.label.resolveFrom(context)),
+                            ),
                             const SizedBox(height: 6),
                             Text(
                               'Pastikan server backend Laravel aktif dan URL server sesuai.',
@@ -1792,13 +1833,21 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                 width: double.infinity,
                 child: CupertinoSlidingSegmentedControl<int>(
                   groupValue: _selectedOrderTypeId,
+                  thumbColor: CupertinoDynamicColor.withBrightness(
+                    color: CupertinoColors.white,
+                    darkColor: const Color(0xFF636366),
+                  ).resolveFrom(context),
+                  backgroundColor: CupertinoColors.tertiarySystemFill.resolveFrom(context),
                   children: {
                     for (final ot in _availableOrderTypes)
                       (ot['id'] as num).toInt(): Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                         child: Text(
                           (ot['name'] as String?) ?? 'Order',
-                          style: IOSText.caption1.copyWith(fontWeight: FontWeight.w600),
+                          style: IOSText.caption1.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: CupertinoColors.label.resolveFrom(context),
+                          ),
                         ),
                       ),
                   },

@@ -150,7 +150,7 @@ class _PosModifierDialogState extends State<PosModifierDialog> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(pName, style: IOSText.headline),
+                        Text(pName, style: IOSText.headline.copyWith(color: IOSColors.label.resolveFrom(context))),
                         Text(
                           pCategory,
                           style: IOSText.footnote.copyWith(
@@ -220,11 +220,11 @@ class _PosModifierDialogState extends State<PosModifierDialog> {
                                   onTap: () {
                                     setState(() => _selectedVariant = v);
                                   },
-                                  title: Text(v['name'] as String, style: IOSText.body),
+                                  title: Text(v['name'] as String, style: IOSText.body.copyWith(color: IOSColors.label.resolveFrom(context))),
                                   trailing: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Text(_currency.format(vPrice), style: IOSText.tabular(IOSText.subhead)),
+                                      Text(_currency.format(vPrice), style: IOSText.tabular(IOSText.subhead).copyWith(color: IOSColors.label.resolveFrom(context))),
                                       const SizedBox(width: 8),
                                       Icon(
                                         isSel ? CupertinoIcons.checkmark_circle_fill : CupertinoIcons.circle,
@@ -321,7 +321,7 @@ class _PosModifierDialogState extends State<PosModifierDialog> {
                                                 }
                                               });
                                             },
-                                            title: Text(mName, style: IOSText.body),
+                                            title: Text(mName, style: IOSText.body.copyWith(color: IOSColors.label.resolveFrom(context))),
                                             trailing: Row(
                                               mainAxisSize: MainAxisSize.min,
                                               children: [

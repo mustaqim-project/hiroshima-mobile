@@ -120,6 +120,9 @@ abstract final class IOSText {
   static TextStyle get caption1 => _s(12, FontWeight.w400, 0);
   static TextStyle get caption2 => _s(11, FontWeight.w400, 0.06);
 
+  static TextStyle label(BuildContext context, TextStyle base) =>
+      base.copyWith(color: IOSColors.label.resolveFrom(context));
+
   static TextStyle secondary(BuildContext context, TextStyle base) =>
       base.copyWith(color: IOSColors.secondaryLabel.resolveFrom(context));
 
@@ -147,22 +150,25 @@ abstract final class IOSSystemUi {
 }
 
 CupertinoThemeData buildIOSTheme({Brightness? brightness}) {
+  final isDark = brightness == Brightness.dark;
+  final effectiveTextColor = isDark ? CupertinoColors.white : CupertinoColors.black;
+  final effectiveSubtextColor = isDark ? const Color(0xFF8E8E93) : const Color(0xFF6C6C70);
+
   return CupertinoThemeData(
     brightness: brightness ?? Brightness.light,
-    primaryColor: IOSColors.accent,
-    scaffoldBackgroundColor: IOSColors.groupedBackground,
-    barBackgroundColor: CupertinoDynamicColor.withBrightness(
-      color: const Color(0xCCFFFFFF),
-      darkColor: const Color(0xCC1C1C1E),
-    ),
+    primaryColor: isDark ? IOSColors.accentDark : IOSColors.accentLight,
+    primaryContrastingColor: CupertinoColors.white,
+    scaffoldBackgroundColor: isDark ? const Color(0xFF000000) : const Color(0xFFF2F2F7),
+    barBackgroundColor: isDark ? const Color(0xCC1C1C1E) : const Color(0xCCFFFFFF),
     textTheme: CupertinoTextThemeData(
-      textStyle: IOSText.body,
-      actionTextStyle: IOSText.body.copyWith(color: IOSColors.accent),
-      tabLabelTextStyle: IOSText.caption2,
-      navTitleTextStyle: IOSText.headline,
-      navLargeTitleTextStyle: IOSText.largeTitle,
-      pickerTextStyle: IOSText.title3,
-      dateTimePickerTextStyle: IOSText.title3,
+      primaryColor: isDark ? IOSColors.accentDark : IOSColors.accentLight,
+      textStyle: IOSText.body.copyWith(color: effectiveTextColor),
+      actionTextStyle: IOSText.body.copyWith(color: isDark ? IOSColors.accentDark : IOSColors.accentLight),
+      tabLabelTextStyle: IOSText.caption2.copyWith(color: effectiveSubtextColor),
+      navTitleTextStyle: IOSText.headline.copyWith(color: effectiveTextColor),
+      navLargeTitleTextStyle: IOSText.largeTitle.copyWith(color: effectiveTextColor),
+      pickerTextStyle: IOSText.title3.copyWith(color: effectiveTextColor),
+      dateTimePickerTextStyle: IOSText.title3.copyWith(color: effectiveTextColor),
     ),
   );
 }

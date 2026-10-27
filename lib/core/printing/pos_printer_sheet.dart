@@ -146,13 +146,13 @@ class _PosPrinterSheetState extends State<PosPrinterSheet> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
                 children: [
-                  const Icon(CupertinoIcons.printer_fill, size: 24, color: IOSColors.accentLight),
+                  Icon(CupertinoIcons.printer_fill, size: 24, color: IOSColors.accent.resolveFrom(context)),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Printer Kasir Bluetooth', style: IOSText.headline),
+                        Text('Printer Kasir Bluetooth', style: IOSText.headline.copyWith(color: IOSColors.label.resolveFrom(context))),
                         Text(
                           'Mendukung printer Panda POS (PRJ-58D / PRJ-80), Iware, dll.',
                           style: IOSText.footnote.copyWith(
@@ -381,11 +381,11 @@ class _PosPrinterSheetState extends State<PosPrinterSheet> {
                       Container(
                         padding: const EdgeInsets.all(24),
                         alignment: Alignment.center,
-                        child: const Column(
+                        child: Column(
                           children: [
-                            CupertinoActivityIndicator(),
-                            SizedBox(height: 8),
-                            Text('Mencari perangkat Bluetooth terpasang...'),
+                            const CupertinoActivityIndicator(),
+                            const SizedBox(height: 8),
+                            Text('Mencari perangkat Bluetooth terpasang...', style: TextStyle(color: IOSColors.secondaryLabel.resolveFrom(context))),
                           ],
                         ),
                       )
@@ -400,7 +400,7 @@ class _PosPrinterSheetState extends State<PosPrinterSheet> {
                           children: [
                             Icon(CupertinoIcons.bluetooth, size: 36, color: IOSColors.tertiaryLabel.resolveFrom(context)),
                             const SizedBox(height: 8),
-                            Text('Tidak ada perangkat Bluetooth ditemukan', style: IOSText.subhead.copyWith(fontWeight: FontWeight.w600)),
+                            Text('Tidak ada perangkat Bluetooth ditemukan', style: IOSText.subhead.copyWith(fontWeight: FontWeight.w600, color: IOSColors.label.resolveFrom(context))),
                             const SizedBox(height: 4),
                             Text(
                               'Pastikan Bluetooth tablet aktif dan pasangkan (pair) printer Anda terlebih dahulu melalui Pengaturan Bluetooth Android / Tablet.',
@@ -436,9 +436,10 @@ class _PosPrinterSheetState extends State<PosPrinterSheet> {
                                     d.name.isNotEmpty ? d.name : 'Unknown Device',
                                     style: IOSText.body.copyWith(
                                       fontWeight: isThisConnected ? FontWeight.bold : FontWeight.normal,
+                                      color: IOSColors.label.resolveFrom(context),
                                     ),
                                   ),
-                                  subtitle: Text(d.macAdress, style: IOSText.caption1),
+                                  subtitle: Text(d.macAdress, style: IOSText.caption1.copyWith(color: IOSColors.secondaryLabel.resolveFrom(context))),
                                   trailing: isThisConnected
                                       ? Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),

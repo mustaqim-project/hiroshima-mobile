@@ -179,26 +179,40 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
               const SizedBox(height: IOSSpacing.md),
 
               if (_errorMessage != null) ...[
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFEE2E2),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFFCA5A5), width: 0.5),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(CupertinoIcons.exclamationmark_triangle_fill, size: 16, color: Color(0xFFDC2626)),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          _errorMessage!,
-                          style: const TextStyle(color: Color(0xFF991B1B), fontSize: 13),
-                        ),
+                Builder(builder: (ctx) {
+                  final isDark = CupertinoTheme.of(ctx).brightness == Brightness.dark;
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF451A1A) : const Color(0xFFFEE2E2),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isDark ? const Color(0xFF7F1D1D) : const Color(0xFFFCA5A5),
+                        width: 0.5,
                       ),
-                    ],
-                  ),
-                ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          CupertinoIcons.exclamationmark_triangle_fill,
+                          size: 16,
+                          color: isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _errorMessage!,
+                            style: TextStyle(
+                              color: isDark ? const Color(0xFFFECACA) : const Color(0xFF991B1B),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
                 const SizedBox(height: IOSSpacing.md),
               ],
 
@@ -233,12 +247,22 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
                         controller: _cashController,
                         keyboardType: TextInputType.number,
                         onChanged: (_) => setState(() {}),
-                        prefix: const Padding(
-                          padding: EdgeInsets.only(left: 12),
-                          child: Text('Rp ', style: TextStyle(fontWeight: FontWeight.bold)),
+                        prefix: Padding(
+                          padding: const EdgeInsets.only(left: 12),
+                          child: Text(
+                            'Rp ',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: CupertinoColors.label.resolveFrom(context),
+                            ),
+                          ),
                         ),
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: CupertinoColors.label.resolveFrom(context),
+                        ),
                         decoration: BoxDecoration(
                           color: CupertinoColors.tertiarySystemFill.resolveFrom(context),
                           borderRadius: BorderRadius.circular(10),
@@ -301,17 +325,28 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text('Shift Aktif', style: IOSText.subhead),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFDCFCE7),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Text(
-                              'BERJALAN',
-                              style: TextStyle(color: Color(0xFF166534), fontSize: 11, fontWeight: FontWeight.bold),
-                            ),
-                          ),
+                          Builder(builder: (ctx) {
+                            final isDark = CupertinoTheme.of(ctx).brightness == Brightness.dark;
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isDark ? const Color(0xFF064E3B) : const Color(0xFFDCFCE7),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: isDark ? const Color(0xFF047857) : const Color(0xFF86EFAC),
+                                  width: 0.5,
+                                ),
+                              ),
+                              child: Text(
+                                'BERJALAN',
+                                style: TextStyle(
+                                  color: isDark ? const Color(0xFF6EE7B7) : const Color(0xFF166534),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            );
+                          }),
                         ],
                       ),
                       const SizedBox(height: 10),
@@ -344,12 +379,22 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
                         controller: _cashController,
                         keyboardType: TextInputType.number,
                         onChanged: (_) => setState(() {}),
-                        prefix: const Padding(
-                          padding: EdgeInsets.only(left: 12),
-                          child: Text('Rp ', style: TextStyle(fontWeight: FontWeight.bold)),
+                        prefix: Padding(
+                          padding: const EdgeInsets.only(left: 12),
+                          child: Text(
+                            'Rp ',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: CupertinoColors.label.resolveFrom(context),
+                            ),
+                          ),
                         ),
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: CupertinoColors.label.resolveFrom(context),
+                        ),
                         decoration: BoxDecoration(
                           color: CupertinoColors.tertiarySystemFill.resolveFrom(context),
                           borderRadius: BorderRadius.circular(10),
@@ -357,18 +402,36 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
                       ),
                       const SizedBox(height: 10),
 
-                      Builder(builder: (_) {
+                      Builder(builder: (diffCtx) {
+                        final isDark = CupertinoTheme.of(diffCtx).brightness == Brightness.dark;
                         final expected = (shift?['expected_cash'] as num?)?.toInt() ?? (shift?['starting_cash'] as num?)?.toInt() ?? 0;
                         final actual = _parsedAmount;
                         final diff = actual - expected;
 
+                        final bgColor = diff == 0
+                            ? (isDark ? const Color(0xFF064E3B) : const Color(0xFFDCFCE7))
+                            : (diff < 0
+                                ? (isDark ? const Color(0xFF451A1A) : const Color(0xFFFEE2E2))
+                                : (isDark ? const Color(0xFF451A03) : const Color(0xFFFEF3C7)));
+
+                        final borderColor = diff == 0
+                            ? (isDark ? const Color(0xFF047857) : const Color(0xFF86EFAC))
+                            : (diff < 0
+                                ? (isDark ? const Color(0xFF7F1D1D) : const Color(0xFFFCA5A5))
+                                : (isDark ? const Color(0xFF78350F) : const Color(0xFFFCD34D)));
+
+                        final textColor = diff == 0
+                            ? (isDark ? const Color(0xFF6EE7B7) : const Color(0xFF166534))
+                            : (diff < 0
+                                ? (isDark ? const Color(0xFFFECACA) : const Color(0xFF991B1B))
+                                : (isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E)));
+
                         return Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           decoration: BoxDecoration(
-                            color: diff == 0
-                                ? const Color(0xFFDCFCE7)
-                                : (diff < 0 ? const Color(0xFFFEE2E2) : const Color(0xFFFEF3C7)),
+                            color: bgColor,
                             borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: borderColor, width: 0.5),
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -378,9 +441,7 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
                                 style: TextStyle(
                                   fontWeight: FontWeight.w600,
                                   fontSize: 13,
-                                  color: diff == 0
-                                      ? const Color(0xFF166534)
-                                      : (diff < 0 ? const Color(0xFF991B1B) : const Color(0xFF92400E)),
+                                  color: textColor,
                                 ),
                               ),
                               Text(
@@ -388,9 +449,7 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 14,
-                                  color: diff == 0
-                                      ? const Color(0xFF166534)
-                                      : (diff < 0 ? const Color(0xFF991B1B) : const Color(0xFF92400E)),
+                                  color: textColor,
                                 ),
                               ),
                             ],

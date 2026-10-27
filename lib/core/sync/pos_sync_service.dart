@@ -344,7 +344,9 @@ class PosSyncService extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_prefKeyActiveBranch, jsonEncode(newBranch));
     } catch (_) {}
+    _currentShift = null;
     notifyListeners();
+    await fetchCurrentShift();
     return await fetchCatalog(branchId: newBranch['id']);
   }
 
@@ -386,13 +388,23 @@ class PosSyncService extends ChangeNotifier {
 
   Future<Map<String, dynamic>> fetchCurrentShift() async {
     try {
-      final uri = Uri.parse('$baseUrl/shifts/current');
+      final targetBranchId = _branch['id'] ?? currentUser?['branch_id'];
+      String shiftUrl = '$baseUrl/shifts/current';
+      if (targetBranchId != null) {
+        shiftUrl += '?branch_id=$targetBranchId';
+      }
+      final uri = Uri.parse(shiftUrl);
+      final headers = <String, String>{
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $authToken',
+      };
+      if (targetBranchId != null) {
+        headers['X-Branch-Id'] = targetBranchId.toString();
+      }
+
       final response = await http.get(
         uri,
-        headers: {
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $authToken',
-        },
+        headers: headers,
       ).timeout(const Duration(seconds: 4));
 
       final body = jsonDecode(response.body) as Map<String, dynamic>;
@@ -414,15 +426,27 @@ class PosSyncService extends ChangeNotifier {
 
   Future<Map<String, dynamic>> openShift(int startingCash) async {
     try {
+      final targetBranchId = _branch['id'] ?? currentUser?['branch_id'];
       final uri = Uri.parse('$baseUrl/shifts/open');
+      final headers = <String, String>{
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $authToken',
+      };
+      if (targetBranchId != null) {
+        headers['X-Branch-Id'] = targetBranchId.toString();
+      }
+      final payload = <String, dynamic>{
+        'starting_cash': startingCash,
+      };
+      if (targetBranchId != null) {
+        payload['branch_id'] = targetBranchId;
+      }
+
       final response = await http.post(
         uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $authToken',
-        },
-        body: jsonEncode({'starting_cash': startingCash}),
+        headers: headers,
+        body: jsonEncode(payload),
       ).timeout(const Duration(seconds: 5));
 
       final body = jsonDecode(response.body) as Map<String, dynamic>;
@@ -449,15 +473,27 @@ class PosSyncService extends ChangeNotifier {
 
   Future<Map<String, dynamic>> closeShift(int actualCash) async {
     try {
+      final targetBranchId = _branch['id'] ?? currentUser?['branch_id'];
       final uri = Uri.parse('$baseUrl/shifts/close');
+      final headers = <String, String>{
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $authToken',
+      };
+      if (targetBranchId != null) {
+        headers['X-Branch-Id'] = targetBranchId.toString();
+      }
+      final payload = <String, dynamic>{
+        'actual_cash': actualCash,
+      };
+      if (targetBranchId != null) {
+        payload['branch_id'] = targetBranchId;
+      }
+
       final response = await http.post(
         uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $authToken',
-        },
-        body: jsonEncode({'actual_cash': actualCash}),
+        headers: headers,
+        body: jsonEncode(payload),
       ).timeout(const Duration(seconds: 5));
 
       final body = jsonDecode(response.body) as Map<String, dynamic>;
@@ -494,15 +530,26 @@ class PosSyncService extends ChangeNotifier {
 
   Future<Map<String, dynamic>> holdOrder(Map<String, dynamic> payload) async {
     try {
+      final targetBranchId = _branch['id'] ?? currentUser?['branch_id'];
       final uri = Uri.parse('$baseUrl/orders/hold');
+      final headers = <String, String>{
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $authToken',
+      };
+      if (targetBranchId != null) {
+        headers['X-Branch-Id'] = targetBranchId.toString();
+      }
+      final payloadWithBranch = <String, dynamic>{
+        ...payload,
+        if (targetBranchId != null && !payload.containsKey('branch_id'))
+          'branch_id': targetBranchId,
+      };
+
       final response = await http.post(
         uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $authToken',
-        },
-        body: jsonEncode(payload),
+        headers: headers,
+        body: jsonEncode(payloadWithBranch),
       ).timeout(const Duration(seconds: 6));
 
       final body = jsonDecode(response.body) as Map<String, dynamic>;
@@ -518,13 +565,23 @@ class PosSyncService extends ChangeNotifier {
 
   Future<List<Map<String, dynamic>>> fetchHeldOrders() async {
     try {
-      final uri = Uri.parse('$baseUrl/orders/held');
+      final targetBranchId = _branch['id'] ?? currentUser?['branch_id'];
+      String heldUrl = '$baseUrl/orders/held';
+      if (targetBranchId != null) {
+        heldUrl += '?branch_id=$targetBranchId';
+      }
+      final uri = Uri.parse(heldUrl);
+      final headers = <String, String>{
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $authToken',
+      };
+      if (targetBranchId != null) {
+        headers['X-Branch-Id'] = targetBranchId.toString();
+      }
+
       final response = await http.get(
         uri,
-        headers: {
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $authToken',
-        },
+        headers: headers,
       ).timeout(const Duration(seconds: 5));
 
       final body = jsonDecode(response.body) as Map<String, dynamic>;
@@ -922,15 +979,28 @@ class PosSyncService extends ChangeNotifier {
     try {
       final itemsPayload = pending.map((e) => e.payload).toList();
       final uri = Uri.parse('$baseUrl/sync/push');
+      final targetBranchId = _branch['id'] ?? currentUser?['branch_id'];
+
+      final headers = <String, String>{
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $authToken',
+      };
+      if (targetBranchId != null) {
+        headers['X-Branch-Id'] = targetBranchId.toString();
+      }
+
+      final bodyMap = <String, dynamic>{
+        'items': itemsPayload,
+      };
+      if (targetBranchId != null) {
+        bodyMap['branch_id'] = targetBranchId;
+      }
 
       final response = await http.post(
         uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $authToken',
-        },
-        body: jsonEncode({'items': itemsPayload}),
+        headers: headers,
+        body: jsonEncode(bodyMap),
       ).timeout(const Duration(seconds: 8));
 
       if (response.statusCode == 200) {
