@@ -43,8 +43,8 @@ class IOSButton extends StatelessWidget {
     };
 
     final horizontalPadding = switch (size) {
-      IOSButtonSize.regular => 20.0,
-      IOSButtonSize.small => 12.0,
+      IOSButtonSize.regular => 16.0,
+      IOSButtonSize.small => 10.0,
     };
 
     final textStyle = switch (size) {

@@ -1566,9 +1566,9 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Top Image Container with Overlaid Badges (Uncropped, AspectRatio 1.18)
+            // Top Image Container with Overlaid Badges (Uncropped, AspectRatio 1.45)
             AspectRatio(
-              aspectRatio: 1.18,
+              aspectRatio: 1.45,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -1659,7 +1659,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
             // Bottom Product Info (Name, SKU, Price, and Tactile Add Button)
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+                padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1673,18 +1673,18 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
-                            height: 1.25,
+                            height: 1.2,
                             color: IOSColors.label.resolveFrom(context),
                             decoration: TextDecoration.none,
                           ),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(height: 3),
+                        const SizedBox(height: 2),
                         Text(
                           (sku != null && sku.isNotEmpty) ? sku : category,
                           style: TextStyle(
-                            fontSize: 10.5,
+                            fontSize: 10,
                             fontWeight: FontWeight.w500,
                             color: CupertinoColors.secondaryLabel.resolveFrom(context),
                             decoration: TextDecoration.none,
@@ -1694,6 +1694,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 4),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       crossAxisAlignment: CrossAxisAlignment.center,
@@ -1705,7 +1706,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                             child: Text(
                               _currency.format(price),
                               style: TextStyle(
-                                fontSize: 15,
+                                fontSize: 14.5,
                                 fontWeight: FontWeight.w800,
                                 color: isDark ? CupertinoColors.white : const Color(0xFF0F172A),
                                 decoration: TextDecoration.none,
@@ -1713,10 +1714,10 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 6),
+                        const SizedBox(width: 4),
                         Container(
-                          width: 30,
-                          height: 30,
+                          width: 28,
+                          height: 28,
                           decoration: BoxDecoration(
                             color: const Color(0xFF007AFF),
                             shape: BoxShape.circle,
@@ -1731,7 +1732,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                           alignment: Alignment.center,
                           child: const Icon(
                             CupertinoIcons.plus,
-                            size: 17,
+                            size: 16,
                             color: CupertinoColors.white,
                           ),
                         ),
@@ -1856,12 +1857,15 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                   children: {
                     for (final ot in _availableOrderTypes)
                       (ot['id'] as num).toInt(): Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        child: Text(
-                          (ot['name'] as String?) ?? 'Order',
-                          style: IOSText.caption1.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: CupertinoColors.label.resolveFrom(context),
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            (ot['name'] as String?) ?? 'Order',
+                            style: IOSText.caption1.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: CupertinoColors.label.resolveFrom(context),
+                            ),
                           ),
                         ),
                       ),
@@ -2113,7 +2117,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                 ),
                 const SizedBox(height: 14),
 
-                // Action Buttons: One filled button per screen rule
+                // Secondary Actions: Hold & Diskon
                 Row(
                   children: [
                     Expanded(
@@ -2121,31 +2125,36 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                         label: 'Hold',
                         icon: CupertinoIcons.pause,
                         variant: IOSButtonVariant.tinted,
+                        size: IOSButtonSize.small,
+                        expanded: true,
                         onPressed: _cart.isEmpty ? null : _handleHoldBill,
                       ),
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: IOSButton(
                         label: 'Diskon',
                         icon: CupertinoIcons.tag,
                         variant: IOSButtonVariant.tinted,
+                        size: IOSButtonSize.small,
+                        expanded: true,
                         onPressed: _cart.isEmpty ? null : _openDiscountDialog,
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      flex: 2,
-                      child: IOSButton(
-                        label: 'Bayar & Cetak',
-                        icon: CupertinoIcons.printer_fill,
-                        variant: IOSButtonVariant.filled,
-                        onPressed: _cart.isEmpty
-                            ? null
-                            : () => _openPayment(dismissCurrentModal: isModalSheet),
-                      ),
-                    ),
                   ],
+                ),
+                const SizedBox(height: 8),
+
+                // Primary CTA: Bayar & Cetak (Prominent Full Width)
+                IOSButton(
+                  label: 'Bayar & Cetak',
+                  icon: CupertinoIcons.printer_fill,
+                  variant: IOSButtonVariant.filled,
+                  size: IOSButtonSize.regular,
+                  expanded: true,
+                  onPressed: _cart.isEmpty
+                      ? null
+                      : () => _openPayment(dismissCurrentModal: isModalSheet),
                 ),
               ],
             ),

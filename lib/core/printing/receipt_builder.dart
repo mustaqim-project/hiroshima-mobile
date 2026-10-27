@@ -31,16 +31,28 @@ class ReceiptBuilder {
     final buffer = StringBuffer();
     final timeStr = DateFormat('dd/MM/yyyy HH:mm').format(transactionTime);
 
+    // 1. LOGO LANDSCAPE HIROSHIMA
     buffer.writeln('================================');
-    buffer.writeln('        $branchName        ');
-    buffer.writeln('  $branchAddress  ');
-    buffer.writeln('        Telp: $branchPhone        ');
+    buffer.writeln('       H I R O S H I M A        ');
+    buffer.writeln('  JAPANESE STREET FOOD & SUSHI  ');
     buffer.writeln('================================');
+
+    // 2. INFORMASI CABANG & ALAMAT
+    buffer.writeln('Cabang    : $branchName');
+    if (branchAddress.isNotEmpty) {
+      buffer.writeln('Alamat    : $branchAddress');
+    }
+    if (branchPhone.isNotEmpty) {
+      buffer.writeln('No. Telp  : $branchPhone');
+    }
+    buffer.writeln('--------------------------------');
     buffer.writeln('     *** RANGKAP 1 - CUSTOMER ***    ');
     if (isDuplicateCopy) {
       buffer.writeln('             [SALINAN]             ');
     }
     buffer.writeln('--------------------------------');
+
+    // 3. INFORMASI STRUK & METADATA
     buffer.writeln('No. Struk : $orderNo');
     buffer.writeln('Waktu     : $timeStr WIB');
     buffer.writeln('Kasir     : $cashierName');
@@ -50,6 +62,7 @@ class ReceiptBuilder {
     }
     buffer.writeln('--------------------------------');
 
+    // 4. INFORMASI ORDER (ITEMS & FINANCIAL SUMMARY)
     for (final item in items) {
       final name = item['name'] as String;
       final qty = item['qty'] as int;
@@ -59,10 +72,16 @@ class ReceiptBuilder {
       buffer.writeln(name);
       buffer.writeln('  ${qty}x ${_currencyFormat.format(price).padRight(12)} ${_currencyFormat.format(itemSubtotal).padLeft(12)}');
 
+      final notes = item['notes'] as String?;
+      if (notes != null && notes.isNotEmpty) {
+        buffer.writeln('  * Catatan: $notes');
+      }
+
       final modifiers = item['modifiers'] as List<dynamic>?;
       if (modifiers != null && modifiers.isNotEmpty) {
         for (final mod in modifiers) {
-          buffer.writeln('  + ${mod['name']} (${_currencyFormat.format(mod['price'])})');
+          final modPrice = (mod['price'] as num?)?.toInt() ?? 0;
+          buffer.writeln('  + ${mod['name']} (${_currencyFormat.format(modPrice)})');
         }
       }
     }
@@ -89,6 +108,7 @@ class ReceiptBuilder {
     buffer.writeln('TOTAL BAYAR   : ${_currencyFormat.format(totalAmount).padLeft(14)}');
     buffer.writeln('================================');
 
+    // 5. JENIS PEMBAYARAN
     for (final p in payments) {
       final method = p['method'] as String;
       final amount = p['amount'] as int;
@@ -99,9 +119,11 @@ class ReceiptBuilder {
       buffer.writeln('Kembalian     : ${_currencyFormat.format(changeAmount).padLeft(14)}');
     }
 
+    // 6. FOOTER
     buffer.writeln('--------------------------------');
     buffer.writeln('  Terima kasih atas kunjungan Anda  ');
-    buffer.writeln('      Selamat menikmati hidangan      ');
+    buffer.writeln('    Selamat menikmati hidangan!     ');
+    buffer.writeln('      Instagram: @hiroshima.id      ');
     buffer.writeln('\n\n\n[CUT]\n');
 
     return buffer.toString();

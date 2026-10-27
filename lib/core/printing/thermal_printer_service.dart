@@ -4,6 +4,8 @@
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
@@ -216,6 +218,43 @@ class ThermalPrinterService extends ChangeNotifier {
     } catch (e) {
       return PrinterResult(success: false, message: 'Gagal memutuskan: $e');
     }
+  }
+
+  /// Generate landscape logo bitmap commands or fallback ASCII header
+  Future<List<int>> _generateLandscapeLogoBytes(Generator generator) async {
+    try {
+      final byteData = await rootBundle.load('assets/images/logo_horizontal.png');
+      final buffer = byteData.buffer.asUint8List();
+      final decoded = img.decodeImage(buffer);
+      if (decoded != null) {
+        // Suitable width for thermal roll: 58mm ~ 360px, 80mm ~ 500px
+        final targetWidth = is80mm ? 500 : 360;
+        final resized = img.copyResize(decoded, width: targetWidth);
+        return generator.imageRaster(resized, align: PosAlign.center);
+      }
+    } catch (e) {
+      debugPrint('[ThermalPrinterService] Landscape logo raster fallback: $e');
+    }
+
+    // Stylized ASCII Banner Fallback
+    final List<int> fallback = [];
+    fallback.addAll(generator.text(
+      '================================',
+      styles: const PosStyles(align: PosAlign.center),
+    ));
+    fallback.addAll(generator.text(
+      'H I R O S H I M A',
+      styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size1, width: PosTextSize.size1),
+    ));
+    fallback.addAll(generator.text(
+      'JAPANESE STREET FOOD & SUSHI',
+      styles: const PosStyles(align: PosAlign.center, fontType: PosFontType.fontB),
+    ));
+    fallback.addAll(generator.text(
+      '================================',
+      styles: const PosStyles(align: PosAlign.center),
+    ));
+    return fallback;
   }
 
   /// Print ESC/POS Dual-Copy Order Receipts:
