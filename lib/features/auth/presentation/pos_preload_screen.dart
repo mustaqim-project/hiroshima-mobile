@@ -65,10 +65,12 @@ class _PosPreloadScreenState extends State<PosPreloadScreen> with SingleTickerPr
     });
 
     try {
-      await PosSyncService.instance.fetchCatalog().timeout(
-        const Duration(seconds: 4),
-        onTimeout: () => false,
-      );
+      if (PosSyncService.instance.isLoggedIn && PosSyncService.instance.authToken.isNotEmpty) {
+        await PosSyncService.instance.fetchCatalog().timeout(
+          const Duration(seconds: 4),
+          onTimeout: () => false,
+        );
+      }
     } catch (_) {}
 
     // Step 3: Check active shift and user state

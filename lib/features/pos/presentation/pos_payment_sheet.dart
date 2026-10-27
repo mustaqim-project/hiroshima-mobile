@@ -94,6 +94,24 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
   Future<void> _handleProcessPayment() async {
     if (!_canSubmit) return;
 
+    if (!PosSyncService.instance.hasActiveShift) {
+      showCupertinoDialog(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text('Shift Kasir Belum Dibuka'),
+          content: const Text('Transaksi diblokir. Kasir wajib melakukan Open Shift sebelum dapat memproses pembayaran.'),
+          actions: [
+            CupertinoDialogAction(
+              isDefaultAction: true,
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Mengerti'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     setState(() => _isProcessing = true);
 
     final calc = widget.calculation;
@@ -105,6 +123,7 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
     final orderNo = 'HRS01-POS-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
     final orderUuid = const Uuid().v4();
     final transactionTime = TrustedClock().now;
+    final currentShift = PosSyncService.instance.currentShift;
     const cashierName = 'Kasir Hiroshima';
 
     // Build Payload for Backend Push (FSD-10)
@@ -112,7 +131,8 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
       'uuid': orderUuid,
       'order_no': orderNo,
       'branch_id': branch['id'] ?? 1,
-      'user_id': 1,
+      'shift_id': currentShift?['id'],
+      'user_id': PosSyncService.instance.currentUser?['id'] ?? 1,
       'order_type_id': widget.orderTypeId,
       'table_id': widget.tableNo != null ? int.tryParse(widget.tableNo!) : null,
       'client_created_at': transactionTime.toIso8601String(),

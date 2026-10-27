@@ -26,18 +26,17 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
   LoginMode _selectedMode = LoginMode.pin;
 
   // PIN mode state
+  final TextEditingController _usernameController = TextEditingController();
   String _enteredPin = '';
-  String _selectedCashierUsername = 'kasir_ckn';
-  String _selectedCashierName = 'Kasir Cikini';
 
   // Email mode state
-  final TextEditingController _emailController = TextEditingController(text: 'hiroshimajapanese@gmail.com');
-  final TextEditingController _passwordController = TextEditingController(text: 'password123');
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
   bool _obscurePassword = true;
 
   // Activation mode state
   final TextEditingController _activationCodeController = TextEditingController();
-  final TextEditingController _deviceNameController = TextEditingController(text: 'Tablet Kasir 1');
+  final TextEditingController _deviceNameController = TextEditingController();
 
   bool _isLoading = false;
   String? _errorMessage;
@@ -45,19 +44,11 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
   @override
   void initState() {
     super.initState();
-    // Default cashiers from backend or cache
-    final branchCode = PosSyncService.instance.branch['code'] as String? ?? 'HRS-CKN';
-    if (branchCode == 'HRS-TBT') {
-      _selectedCashierUsername = 'kasir_tbt';
-      _selectedCashierName = 'Kasir Tebet';
-    } else if (branchCode == 'HRS-CLD') {
-      _selectedCashierUsername = 'kasir_cld';
-      _selectedCashierName = 'Kasir Cilandak';
-    }
   }
 
   @override
   void dispose() {
+    _usernameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _activationCodeController.dispose();
@@ -75,7 +66,13 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
       });
 
       if (_enteredPin.length == 6) {
-        _submitPinLogin();
+        if (_usernameController.text.trim().isNotEmpty) {
+          _submitPinLogin();
+        } else {
+          setState(() {
+            _errorMessage = 'Silakan masukkan username kasir terlebih dahulu.';
+          });
+        }
       }
     }
   }
@@ -99,13 +96,23 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
   }
 
   Future<void> _submitPinLogin() async {
+    final username = _usernameController.text.trim();
+    if (username.isEmpty) {
+      setState(() => _errorMessage = 'Username kasir wajib diisi.');
+      return;
+    }
+    if (_enteredPin.length < 6) {
+      setState(() => _errorMessage = 'PIN kasir harus 6 digit angka.');
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
     final res = await PosSyncService.instance.login(
-      identifier: _selectedCashierUsername,
+      identifier: username,
       credential: _enteredPin,
     );
 
@@ -121,7 +128,7 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
       setState(() {
         _isLoading = false;
         _enteredPin = '';
-        _errorMessage = res['message'] as String? ?? 'PIN salah. Silakan coba lagi.';
+        _errorMessage = res['message'] as String? ?? 'Kredensial atau PIN salah. Silakan coba lagi.';
       });
     }
   }
@@ -203,57 +210,7 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
     }
   }
 
-  void _showCashierPicker() {
-    final cashiers = PosSyncService.instance.cashiers;
-    final branch = PosSyncService.instance.branch;
-    final branchName = (branch['name'] as String?) ?? 'Cabang';
 
-    showCupertinoModalPopup<void>(
-      context: context,
-      builder: (BuildContext ctx) => CupertinoActionSheet(
-        title: Text('Pilih Akun Kasir Cabang', style: IOSText.subhead),
-        message: Text(
-          'Cabang aktif: $branchName',
-          style: IOSText.caption1,
-        ),
-        actions: cashiers.isNotEmpty
-            ? cashiers.map((c) {
-                final uName = (c['username'] as String?) ?? 'kasir';
-                final name = (c['name'] as String?) ?? 'Kasir';
-                final role = ((c['role'] as String?) ?? 'cashier').toUpperCase();
-                return CupertinoActionSheetAction(
-                  onPressed: () {
-                    setState(() {
-                      _selectedCashierUsername = uName;
-                      _selectedCashierName = name;
-                      _enteredPin = '';
-                    });
-                    Navigator.pop(ctx);
-                  },
-                  child: Text('$name ($uName) · $role'),
-                );
-              }).toList()
-            : <CupertinoActionSheetAction>[
-                CupertinoActionSheetAction(
-                  onPressed: () {
-                    setState(() {
-                      _selectedCashierUsername = 'kasir';
-                      _selectedCashierName = 'Kasir Operasional';
-                      _enteredPin = '';
-                    });
-                    Navigator.pop(ctx);
-                  },
-                  child: const Text('Kasir Operasional (kasir)'),
-                ),
-              ],
-        cancelButton: CupertinoActionSheetAction(
-          isDefaultAction: true,
-          onPressed: () => Navigator.pop(ctx),
-          child: const Text('Batal'),
-        ),
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {

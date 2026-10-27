@@ -24,6 +24,9 @@ class PosSyncService extends ChangeNotifier {
   static const String _prefKeyBaseUrl = 'hiroshima_pos_api_base_url';
   static const String _prefKeyAuthToken = 'hiroshima_pos_auth_token';
   static const String _prefKeyCurrentUser = 'hiroshima_pos_current_user';
+  static const String _prefKeyActiveBranch = 'hiroshima_pos_active_branch';
+  static const String _prefKeyAccessibleBranches = 'hiroshima_pos_accessible_branches';
+  static const String _prefKeyCanSwitchBranch = 'hiroshima_pos_can_switch_branch';
   static const String _prefKeyCatalogCache = 'hiroshima_pos_catalog_cache_v2';
 
   /// Official production API base URL on hiroshima.web.id
@@ -45,10 +48,29 @@ class PosSyncService extends ChangeNotifier {
   String baseUrl = defaultBaseUrl;
 
   String get serverBaseUrl => baseUrl.replaceAll('/api/v1', '');
-  String authToken = '1|pgBw6moE0v96jEKGtHnJeN6DQWRW4YFz7bR39pER2f1657a3';
+  String authToken = '';
+
+  Map<String, dynamic> _branch = {};
+  List<Map<String, dynamic>> _accessibleBranches = [];
+  bool _canSwitchBranch = false;
 
   Map<String, dynamic>? currentUser;
-  void setMockUser(Map<String, dynamic>? val) => currentUser = val;
+  void setMockUser(Map<String, dynamic>? val) {
+    currentUser = val;
+    if (val != null) {
+      if (val['branch'] != null) {
+        _branch = Map<String, dynamic>.from(val['branch'] as Map);
+      }
+      if (val['accessible_branches'] != null) {
+        _accessibleBranches = ((val['accessible_branches'] as List<dynamic>?) ?? [])
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+      }
+      if (val['can_switch_branch'] != null) {
+        _canSwitchBranch = val['can_switch_branch'] == true;
+      }
+    }
+  }
   bool get isLoggedIn => currentUser != null;
 
   bool _isOnline = true;
@@ -64,7 +86,6 @@ class PosSyncService extends ChangeNotifier {
   String get statusMessage => _statusMessage;
 
   // Cached domain state from backend
-  Map<String, dynamic> _branch = {};
   List<Map<String, dynamic>> _categories = [];
   List<Map<String, dynamic>> _products = [];
   List<Map<String, dynamic>> _orderTypes = [];
@@ -75,6 +96,8 @@ class PosSyncService extends ChangeNotifier {
   Map<String, dynamic> _systemSettings = {};
 
   Map<String, dynamic> get branch => _branch;
+  List<Map<String, dynamic>> get accessibleBranches => _accessibleBranches;
+  bool get canSwitchBranch => _canSwitchBranch;
   List<Map<String, dynamic>> get categories => _categories;
   List<Map<String, dynamic>> get products => _products;
   List<Map<String, dynamic>> get orderTypes => _orderTypes;
@@ -88,9 +111,21 @@ class PosSyncService extends ChangeNotifier {
   String get appTagline => (_systemSettings['app_tagline'] as String?) ?? 'Japanese Street Food';
   String? get appLogoUrl => resolveImageUrl(_systemSettings['app_logo_url'] as String?);
 
+  bool get isHoldBillEnabled {
+    final val = _systemSettings['hold_bill_enabled'];
+    if (val == null) return true;
+    if (val is bool) return val;
+    return val.toString() == '1' || val.toString().toLowerCase() == 'true';
+  }
+
+  List<Map<String, dynamic>> _heldOrders = [];
+  List<Map<String, dynamic>> get heldOrders => _heldOrders;
+
   @visibleForTesting
   void resetForTesting() {
     _branch = {};
+    _accessibleBranches = [];
+    _canSwitchBranch = false;
     _categories = [];
     _products = [];
     _orderTypes = [];
@@ -99,7 +134,9 @@ class PosSyncService extends ChangeNotifier {
     _paymentMethods = [];
     _cashiers = [];
     _systemSettings = {};
+    _heldOrders = [];
     currentUser = null;
+    authToken = '';
   }
 
   /// Resolves relative or localhost image URLs to the active production backend
@@ -136,11 +173,26 @@ class PosSyncService extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString(_prefKeyAuthToken);
       final userStr = prefs.getString(_prefKeyCurrentUser);
+      final branchStr = prefs.getString(_prefKeyActiveBranch);
+      final accBranchesStr = prefs.getString(_prefKeyAccessibleBranches);
+      final canSwitch = prefs.getBool(_prefKeyCanSwitchBranch);
+
       if (token != null && token.isNotEmpty) {
         authToken = token;
       }
       if (userStr != null && userStr.isNotEmpty) {
         currentUser = jsonDecode(userStr) as Map<String, dynamic>;
+      }
+      if (branchStr != null && branchStr.isNotEmpty) {
+        _branch = jsonDecode(branchStr) as Map<String, dynamic>;
+      }
+      if (accBranchesStr != null && accBranchesStr.isNotEmpty) {
+        _accessibleBranches = (jsonDecode(accBranchesStr) as List<dynamic>)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+      }
+      if (canSwitch != null) {
+        _canSwitchBranch = canSwitch;
       }
     } catch (_) {}
   }
@@ -175,16 +227,36 @@ class PosSyncService extends ChangeNotifier {
         }
         if (user != null) {
           currentUser = user;
+          _canSwitchBranch = (user['can_switch_branch'] as bool?) ??
+              (user['branch_id'] == null || user['role'] == 'owner' || user['role'] == 'central_admin');
+
+          if (user['accessible_branches'] != null) {
+            _accessibleBranches = ((user['accessible_branches'] as List<dynamic>?) ?? [])
+                .map((e) => Map<String, dynamic>.from(e as Map))
+                .toList();
+          } else if (user['branch'] != null) {
+            _accessibleBranches = [Map<String, dynamic>.from(user['branch'] as Map)];
+          }
+
+          if (user['branch'] != null) {
+            _branch = Map<String, dynamic>.from(user['branch'] as Map);
+          } else if (_accessibleBranches.isNotEmpty) {
+            _branch = _accessibleBranches.first;
+          }
+
           try {
             final prefs = await SharedPreferences.getInstance();
             if (token != null) await prefs.setString(_prefKeyAuthToken, token);
             await prefs.setString(_prefKeyCurrentUser, jsonEncode(user));
+            await prefs.setString(_prefKeyActiveBranch, jsonEncode(_branch));
+            await prefs.setString(_prefKeyAccessibleBranches, jsonEncode(_accessibleBranches));
+            await prefs.setBool(_prefKeyCanSwitchBranch, _canSwitchBranch);
           } catch (_) {}
         }
 
         notifyListeners();
-        // Fetch latest catalog on login
-        unawaited(fetchCatalog());
+        // Fetch latest catalog on login for assigned branch
+        unawaited(fetchCatalog(branchId: _branch['id']));
 
         return {
           'success': true,
@@ -262,6 +334,20 @@ class PosSyncService extends ChangeNotifier {
     }
   }
 
+  /// Switch operating branch for multi-branch users (Owner / Admin Pusat / Area Manager)
+  Future<bool> switchBranch(Map<String, dynamic> newBranch) async {
+    if (!_canSwitchBranch && currentUser?['branch_id'] != null) {
+      return false; // Forbidden: restricted to assigned branch
+    }
+    _branch = newBranch;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefKeyActiveBranch, jsonEncode(newBranch));
+    } catch (_) {}
+    notifyListeners();
+    return await fetchCatalog(branchId: newBranch['id']);
+  }
+
   /// Logout current session
   Future<void> logout() async {
     try {
@@ -275,11 +361,19 @@ class PosSyncService extends ChangeNotifier {
       ).timeout(const Duration(seconds: 3));
     } catch (_) {}
 
+    authToken = '';
     currentUser = null;
+    _accessibleBranches = [];
+    _canSwitchBranch = false;
+    _branch = {};
+
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_prefKeyCurrentUser);
       await prefs.remove(_prefKeyAuthToken);
+      await prefs.remove(_prefKeyActiveBranch);
+      await prefs.remove(_prefKeyAccessibleBranches);
+      await prefs.remove(_prefKeyCanSwitchBranch);
     } catch (_) {}
 
     notifyListeners();
@@ -369,11 +463,17 @@ class PosSyncService extends ChangeNotifier {
       final body = jsonDecode(response.body) as Map<String, dynamic>;
       if (response.statusCode == 200 && body['success'] == true) {
         final closed = body['shift'] as Map<String, dynamic>?;
+        final report = body['report'] as Map<String, dynamic>?;
         _currentShift = null;
         notifyListeners();
-        return {'success': true, 'shift': closed};
+        return {'success': true, 'shift': closed, 'report': report};
       }
-      return {'success': false, 'message': body['message'] ?? 'Gagal menutup shift'};
+      return {
+        'success': false,
+        'error_code': body['error_code'],
+        'message': body['message'] ?? 'Gagal menutup shift',
+        'held_bills': body['held_bills'],
+      };
     } catch (e) {
       final old = _currentShift;
       _currentShift = null;
@@ -387,6 +487,100 @@ class PosSyncService extends ChangeNotifier {
           'status': 'closed',
         },
       };
+    }
+  }
+
+  // ───────────────────────── Hold Bill API ─────────────────────────
+
+  Future<Map<String, dynamic>> holdOrder(Map<String, dynamic> payload) async {
+    try {
+      final uri = Uri.parse('$baseUrl/orders/hold');
+      final response = await http.post(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $authToken',
+        },
+        body: jsonEncode(payload),
+      ).timeout(const Duration(seconds: 6));
+
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 201 && body['success'] == true) {
+        await fetchHeldOrders();
+        return {'success': true, 'order': body['order']};
+      }
+      return {'success': false, 'message': body['message'] ?? 'Gagal menahan pesanan.'};
+    } catch (e) {
+      return {'success': false, 'message': 'Gagal koneksi ke server Hold Bill: $e'};
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchHeldOrders() async {
+    try {
+      final uri = Uri.parse('$baseUrl/orders/held');
+      final response = await http.get(
+        uri,
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $authToken',
+        },
+      ).timeout(const Duration(seconds: 5));
+
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200 && body['success'] == true) {
+        final list = (body['held_bills'] as List<dynamic>?) ?? [];
+        _heldOrders = list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        notifyListeners();
+        return _heldOrders;
+      }
+    } catch (_) {}
+    return _heldOrders;
+  }
+
+  Future<Map<String, dynamic>> resumeHeldOrder(int orderId) async {
+    try {
+      final uri = Uri.parse('$baseUrl/orders/$orderId/resume');
+      final response = await http.post(
+        uri,
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $authToken',
+        },
+      ).timeout(const Duration(seconds: 6));
+
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200 && body['success'] == true) {
+        await fetchHeldOrders();
+        return {'success': true, 'order': body['order']};
+      }
+      return {'success': false, 'message': body['message'] ?? 'Gagal melanjutkan pesanan.'};
+    } catch (e) {
+      return {'success': false, 'message': 'Gagal menghubungi server: $e'};
+    }
+  }
+
+  Future<Map<String, dynamic>> cancelHeldOrder(int orderId, String reason) async {
+    try {
+      final uri = Uri.parse('$baseUrl/orders/$orderId/cancel-hold');
+      final response = await http.post(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $authToken',
+        },
+        body: jsonEncode({'reason': reason}),
+      ).timeout(const Duration(seconds: 6));
+
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200 && body['success'] == true) {
+        await fetchHeldOrders();
+        return {'success': true, 'order': body['order']};
+      }
+      return {'success': false, 'message': body['message'] ?? 'Gagal membatalkan pesanan.'};
+    } catch (e) {
+      return {'success': false, 'message': 'Gagal menghubungi server: $e'};
     }
   }
 
@@ -572,18 +766,30 @@ class PosSyncService extends ChangeNotifier {
   }
 
   /// Fetch full catalog from backend (`/api/v1/sync/pull`)
-  Future<bool> fetchCatalog() async {
+  Future<bool> fetchCatalog({dynamic branchId}) async {
     _isSyncing = true;
     notifyListeners();
 
     try {
-      final uri = Uri.parse('$baseUrl/sync/pull');
+      final targetBranchId = branchId ?? _branch['id'] ?? currentUser?['branch_id'];
+      String pullUrl = '$baseUrl/sync/pull';
+      if (targetBranchId != null) {
+        pullUrl += '?branch_id=$targetBranchId';
+      }
+      final uri = Uri.parse(pullUrl);
+      final headers = <String, String>{
+        'Accept': 'application/json',
+      };
+      if (authToken.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $authToken';
+      }
+      if (targetBranchId != null) {
+        headers['X-Branch-Id'] = targetBranchId.toString();
+      }
+
       final response = await http.get(
         uri,
-        headers: {
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $authToken',
-        },
+        headers: headers,
       ).timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {

@@ -444,6 +444,35 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
   }
 
   void _openPayment({bool dismissCurrentModal = false}) {
+    if (!PosSyncService.instance.hasActiveShift) {
+      if (dismissCurrentModal) {
+        Navigator.pop(context);
+      }
+      showCupertinoDialog(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text('Shift Kasir Belum Dibuka'),
+          content: const Text('Kasir wajib melakukan Open Shift sebelum dapat memproses transaksi POS.'),
+          actions: [
+            CupertinoDialogAction(
+              isDefaultAction: true,
+              onPressed: () {
+                Navigator.pop(ctx);
+                PosShiftSheet.show(context);
+              },
+              child: const Text('Buka Shift Sekarang'),
+            ),
+            CupertinoDialogAction(
+              isDestructiveAction: true,
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Tutup'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     if (dismissCurrentModal) {
       Navigator.pop(context);
     }
@@ -461,6 +490,393 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
           _selectedTableNo = null;
         });
       },
+    );
+  }
+
+  void _handleHoldBill() {
+    if (_cart.isEmpty) return;
+
+    if (!PosSyncService.instance.hasActiveShift) {
+      showCupertinoDialog(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text('Shift Belum Dibuka'),
+          content: const Text('Harap buka shift kasir terlebih dahulu sebelum menahan transaksi.'),
+          actions: [
+            CupertinoDialogAction(
+              isDefaultAction: true,
+              onPressed: () {
+                Navigator.pop(ctx);
+                PosShiftSheet.show(context);
+              },
+              child: const Text('Buka Shift'),
+            ),
+            CupertinoDialogAction(
+              isDestructiveAction: true,
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Batal'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    if (!PosSyncService.instance.isHoldBillEnabled) {
+      showCupertinoDialog(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text('Fitur Hold Bill Dinonaktifkan'),
+          content: const Text('Fitur Tahan Pesanan (Hold Bill) dinonaktifkan oleh pengaturan Back Office.'),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Mengerti'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final refController = TextEditingController(text: _selectedTableNo != null ? 'Meja $_selectedTableNo' : '');
+    final notesController = TextEditingController();
+
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('Tahan Pesanan (Hold Bill)'),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Simpan transaksi ini sementara untuk melayani pelanggan berikutnya.'),
+              const SizedBox(height: 10),
+              CupertinoTextField(
+                controller: refController,
+                placeholder: 'Label / Nama Pemesan (cth: Meja 4 / Pak Budi)',
+                padding: const EdgeInsets.all(10),
+              ),
+              const SizedBox(height: 8),
+              CupertinoTextField(
+                controller: notesController,
+                placeholder: 'Catatan tambahan (opsional)',
+                padding: const EdgeInsets.all(10),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Batal'),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final payload = {
+                'shift_id': PosSyncService.instance.currentShift?['id'],
+                'order_type_id': _selectedOrderTypeId,
+                'table_id': _selectedTableNo != null ? int.tryParse(_selectedTableNo!) : null,
+                'hold_reference': refController.text.trim().isNotEmpty
+                    ? refController.text.trim()
+                    : 'Bill ${DateFormat('HH:mm').format(DateTime.now())}',
+                'hold_notes': notesController.text.trim(),
+                'manual_discount': _manualDiscount,
+                'items': _cart.map((item) => {
+                  'product_id': item['id'],
+                  'product_variant_id': item['variant_id'],
+                  'product_name': item['name'],
+                  'variant_name': item['variant_name'],
+                  'quantity': item['qty'],
+                  'unit_price': item['price'],
+                  'notes': item['notes'],
+                  'modifiers': ((item['modifiers'] as List<dynamic>?) ?? []).map((m) => {
+                    'modifier_id': m['modifier_id'] ?? m['id'],
+                    'modifier_name': m['name'] ?? m['modifier_name'],
+                    'unit_price': m['price'] ?? m['unit_price'] ?? 0,
+                    'quantity': 1,
+                  }).toList(),
+                }).toList(),
+              };
+
+              final res = await PosSyncService.instance.holdOrder(payload);
+              if (res['success'] == true) {
+                HapticFeedback.mediumImpact();
+                setState(() {
+                  _cart.clear();
+                  _manualDiscount = 0;
+                  _selectedTableNo = null;
+                });
+              } else {
+                HapticFeedback.heavyImpact();
+                if (mounted) {
+                  showCupertinoDialog(
+                    context: context,
+                    builder: (errCtx) => CupertinoAlertDialog(
+                      title: const Text('Gagal Menahan Bill'),
+                      content: Text(res['message'] as String? ?? 'Terjadi kesalahan.'),
+                      actions: [
+                        CupertinoDialogAction(
+                          onPressed: () => Navigator.pop(errCtx),
+                          child: const Text('OK'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text('Simpan Hold Bill'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openHoldBillsModal() async {
+    await PosSyncService.instance.fetchHeldOrders();
+
+    if (!mounted) return;
+
+    showCupertinoModalPopup(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (modalCtx, setModalState) {
+          final heldList = PosSyncService.instance.heldOrders;
+
+          return Container(
+            constraints: const BoxConstraints(maxHeight: 550, maxWidth: 600),
+            decoration: BoxDecoration(
+              color: IOSColors.groupedBackground.resolveFrom(context),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                children: [
+                  // Header
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(CupertinoIcons.pause_circle_fill, color: Color(0xFFD97706), size: 22),
+                            const SizedBox(width: 8),
+                            Text('Daftar Transaksi Ditahan (Hold Bill)', style: IOSText.headline),
+                          ],
+                        ),
+                        CupertinoButton(
+                          padding: EdgeInsets.zero,
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text('Tutup', style: TextStyle(fontWeight: FontWeight.bold)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(height: 0.5, color: CupertinoColors.separator.resolveFrom(context)),
+
+                  // Content List
+                  Expanded(
+                    child: heldList.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(CupertinoIcons.checkmark_circle, size: 48, color: CupertinoColors.systemGrey3.resolveFrom(context)),
+                                const SizedBox(height: 8),
+                                Text('Tidak ada Hold Bill aktif.', style: IOSText.footnote.copyWith(color: CupertinoColors.systemGrey)),
+                              ],
+                            ),
+                          )
+                        : ListView.separated(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: heldList.length,
+                            separatorBuilder: (_, _) => const SizedBox(height: 10),
+                            itemBuilder: (_, idx) {
+                              final bill = heldList[idx];
+                              final items = (bill['items'] as List<dynamic>?) ?? [];
+                              final total = (bill['total_amount'] as num?)?.toInt() ?? 0;
+                              final ref = (bill['hold_reference'] as String?) ?? 'Bill #${bill['order_no']}';
+                              final timeStr = bill['held_at'] != null ? DateFormat('HH:mm').format(DateTime.parse(bill['held_at'])) : '-';
+
+                              return Container(
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: IOSColors.secondaryGroupedBackground.resolveFrom(context),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: IOSColors.separator.resolveFrom(context).withValues(alpha: 0.3)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(ref, style: IOSText.headline.copyWith(fontSize: 15, fontWeight: FontWeight.bold)),
+                                        Text(timeStr, style: IOSText.footnote.copyWith(color: CupertinoColors.systemGrey)),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      items.map((i) => '${i['quantity']}x ${i['product_name']}').join(', '),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: IOSText.subhead.copyWith(color: CupertinoColors.label.resolveFrom(context)),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          _currency.format(total),
+                                          style: TextStyle(fontWeight: FontWeight.w800, color: IOSColors.accent.resolveFrom(context), fontSize: 15),
+                                        ),
+                                        Row(
+                                          children: [
+                                            CupertinoButton(
+                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                              color: CupertinoColors.systemRed.withValues(alpha: 0.12),
+                                              borderRadius: BorderRadius.circular(8),
+                                              onPressed: () {
+                                                _promptCancelHoldBill(bill['id'], setModalState);
+                                              },
+                                              child: const Text('Batalkan', style: TextStyle(color: CupertinoColors.systemRed, fontSize: 13, fontWeight: FontWeight.bold)),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            CupertinoButton(
+                                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                                              color: IOSColors.accent.resolveFrom(context),
+                                              borderRadius: BorderRadius.circular(8),
+                                              onPressed: () {
+                                                _resumeHoldBill(bill, ctx);
+                                              },
+                                              child: const Text('Lanjutkan', style: TextStyle(color: CupertinoColors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _resumeHoldBill(Map<String, dynamic> bill, BuildContext modalCtx) async {
+    final orderId = bill['id'] as int;
+    final res = await PosSyncService.instance.resumeHeldOrder(orderId);
+
+    if (!mounted) return;
+
+    if (res['success'] == true) {
+      if (modalCtx.mounted) {
+        Navigator.pop(modalCtx);
+      }
+      final resumedOrder = res['order'] as Map<String, dynamic>;
+      final rawItems = (resumedOrder['items'] as List<dynamic>?) ?? [];
+
+      setState(() {
+        _cart.clear();
+        for (final it in rawItems) {
+          final modifiers = ((it['modifiers'] as List<dynamic>?) ?? []).map((m) => {
+            'modifier_id': m['modifier_id'],
+            'name': m['modifier_name'],
+            'price': m['unit_price'],
+          }).toList();
+
+          _cart.add({
+            'id': it['product_id'],
+            'name': it['product_name'],
+            'price': it['unit_price'] as int,
+            'qty': it['quantity'] as int,
+            'variant_id': it['product_variant_id'],
+            'variant_name': it['variant_name'],
+            'modifiers': modifiers,
+            'notes': it['notes'],
+          });
+        }
+        _manualDiscount = (resumedOrder['manual_discount_amount'] as num?)?.toInt() ?? 0;
+        _selectedOrderTypeIdState = (resumedOrder['order_type_id'] as num?)?.toInt() ?? _selectedOrderTypeId;
+        _selectedTableNo = resumedOrder['table_id']?.toString();
+      });
+      HapticFeedback.mediumImpact();
+    } else {
+      HapticFeedback.heavyImpact();
+      if (mounted) {
+        showCupertinoDialog(
+          context: context,
+          builder: (errCtx) => CupertinoAlertDialog(
+            title: const Text('Gagal Melanjutkan'),
+            content: Text(res['message'] as String? ?? 'Terjadi kesalahan.'),
+            actions: [
+              CupertinoDialogAction(
+                onPressed: () => Navigator.pop(errCtx),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+  }
+
+  void _promptCancelHoldBill(int orderId, StateSetter setModalState) {
+    final reasonController = TextEditingController(text: 'Pelanggan membatalkan pesanan');
+
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('Batalkan Hold Bill'),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Masukkan alasan pembatalan (wajib dicatat pada audit log):'),
+              const SizedBox(height: 10),
+              CupertinoTextField(
+                controller: reasonController,
+                placeholder: 'Alasan pembatalan...',
+                padding: const EdgeInsets.all(10),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Kembali'),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final reason = reasonController.text.trim();
+              if (reason.isEmpty) return;
+              final res = await PosSyncService.instance.cancelHeldOrder(orderId, reason);
+              if (res['success'] == true) {
+                setModalState(() {});
+              }
+            },
+            child: const Text('Konfirmasi Batal'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -765,6 +1181,16 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
             const SizedBox(width: 6),
 
             if (isTablet) ...[
+              // Hold Bills List Button
+              IOSIconButton(
+                icon: CupertinoIcons.pause_circle_fill,
+                semanticLabel: 'Daftar Transaksi Ditahan (Hold Bill)',
+                color: syncService.heldOrders.isNotEmpty ? const Color(0xFFD97706) : CupertinoColors.systemGrey,
+                badge: syncService.heldOrders.isNotEmpty ? '${syncService.heldOrders.length}' : null,
+                onPressed: _openHoldBillsModal,
+              ),
+              const SizedBox(width: 6),
+
               // Shift Management Button (Open / Close Cashier Shift)
               IOSIconButton(
                 icon: CupertinoIcons.money_dollar_circle_fill,
@@ -1498,13 +1924,22 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
                   children: [
                     Expanded(
                       child: IOSButton(
+                        label: 'Hold',
+                        icon: CupertinoIcons.pause,
+                        variant: IOSButtonVariant.tinted,
+                        onPressed: _cart.isEmpty ? null : _handleHoldBill,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: IOSButton(
                         label: 'Diskon',
                         icon: CupertinoIcons.tag,
                         variant: IOSButtonVariant.tinted,
                         onPressed: _cart.isEmpty ? null : _openDiscountDialog,
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     Expanded(
                       flex: 2,
                       child: IOSButton(
