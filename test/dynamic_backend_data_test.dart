@@ -100,5 +100,67 @@ void main() {
       expect(syncService.paymentMethods.length, equals(3));
       expect(syncService.paymentMethods[1]['name'], equals('QRIS Dinamis'));
     });
+
+    test('Assigned branch enforcement: Cashier is locked to assigned branch and cannot switch', () async {
+      syncService.resetForTesting();
+
+      final branchCikini = {'id': 1, 'name': 'Hiroshima Cikini', 'code': 'HRS-CKN'};
+      final branchTebet = {'id': 2, 'name': 'Hiroshima Tebet', 'code': 'HRS-TBT'};
+
+      // Mock user login assigned to Cikini
+      syncService.setMockUser({
+        'id': 3,
+        'name': 'Kasir Cikini',
+        'username': 'kasir_cikini',
+        'role': 'cashier',
+        'branch_id': 1,
+        'branch': branchCikini,
+        'can_switch_branch': false,
+        'accessible_branches': [branchCikini],
+      });
+
+      expect(syncService.canSwitchBranch, isFalse);
+      expect(syncService.branch['id'], equals(1));
+      expect(syncService.accessibleBranches.length, equals(1));
+
+      // Attempt to switch branch must be rejected
+      final switchResult = await syncService.switchBranch(branchTebet);
+      expect(switchResult, isFalse);
+      expect(syncService.branch['id'], equals(1)); // Branch stays Cikini
+    });
+
+    test('Multi-branch authorization: Owner or Central Admin can freely switch branches', () async {
+      syncService.resetForTesting();
+
+      final branchCikini = {'id': 1, 'name': 'Hiroshima Cikini', 'code': 'HRS-CKN'};
+      final branchTebet = {'id': 2, 'name': 'Hiroshima Tebet', 'code': 'HRS-TBT'};
+      final branchCilandak = {'id': 3, 'name': 'Hiroshima Cilandak', 'code': 'HRS-CLD'};
+
+      // Mock user login as Owner with multi-branch access
+      syncService.setMockUser({
+        'id': 1,
+        'name': 'Owner Hiroshima',
+        'username': 'owner',
+        'role': 'owner',
+        'branch_id': null,
+        'branch': branchCikini,
+        'can_switch_branch': true,
+        'accessible_branches': [branchCikini, branchTebet, branchCilandak],
+      });
+
+      expect(syncService.canSwitchBranch, isTrue);
+      expect(syncService.branch['id'], equals(1));
+      expect(syncService.accessibleBranches.length, equals(3));
+
+      // Switching branch to Tebet succeeds locally (catalog fetch may timeout or fallback in tests)
+      await syncService.switchBranch(branchTebet);
+      expect(syncService.branch['id'], equals(2));
+      expect(syncService.branch['name'], equals('Hiroshima Tebet'));
+
+      // Switch to Cilandak
+      await syncService.switchBranch(branchCilandak);
+      expect(syncService.branch['id'], equals(3));
+      expect(syncService.branch['name'], equals('Hiroshima Cilandak'));
+    });
   });
 }

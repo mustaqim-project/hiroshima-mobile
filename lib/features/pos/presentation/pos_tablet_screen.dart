@@ -73,7 +73,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
   // Dynamic Branch info from Backend
   String get _branchName {
     final b = PosSyncService.instance.branch;
-    return (b['name'] as String?) ?? 'Hiroshima Pusat';
+    return (b['name'] as String?) ?? PosSyncService.instance.appName;
   }
 
   // Dynamic Order Types from Backend (100% API driven, no hardcoded dine-in)

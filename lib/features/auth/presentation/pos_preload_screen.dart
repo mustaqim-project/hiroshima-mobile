@@ -60,7 +60,7 @@ class _PosPreloadScreenState extends State<PosPreloadScreen> with SingleTickerPr
 
     // Step 2: Test / Fetch live catalog from Production Server
     setState(() {
-      _statusText = 'Sinkronisasi dengan server hiroshima.web.id...';
+      _statusText = 'Sinkronisasi dengan server backend...';
       _progress = 0.7;
     });
 

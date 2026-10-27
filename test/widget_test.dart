@@ -31,11 +31,14 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1600));
     await tester.pumpAndSettle();
 
-    // Brand and Mode selector verification
+    // Brand and Mode selector verification (strictly Username & PIN or Email & Password)
     expect(find.textContaining('HIROSHIMA'), findsWidgets);
-    expect(find.text('PIN Kasir'), findsOneWidget);
-    expect(find.text('Email & Sandi'), findsOneWidget);
-    expect(find.text('Aktivasi'), findsOneWidget);
+    expect(find.text('Username & PIN'), findsOneWidget);
+    expect(find.text('Email & Password'), findsOneWidget);
+    expect(find.text('Aktivasi Perangkat Tablet Baru'), findsOneWidget);
+
+    // Verify username input field is present and empty (no hardcoded values)
+    expect(find.text('Username Kasir'), findsOneWidget);
   });
 
   testWidgets('Mobile POS Tablet renders catalog and app title when logged in', (WidgetTester tester) async {

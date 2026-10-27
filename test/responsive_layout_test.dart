@@ -42,9 +42,8 @@ void main() {
 
       expect(find.byType(PosLoginScreen), findsOneWidget);
       expect(find.textContaining('HIROSHIMA'), findsWidgets);
-      expect(find.text('PIN Kasir'), findsOneWidget);
-      expect(find.text('Email & Sandi'), findsOneWidget);
-      expect(find.text('Aktivasi'), findsOneWidget);
+      expect(find.text('Username & PIN'), findsOneWidget);
+      expect(find.text('Email & Password'), findsOneWidget);
 
       // Verify no RenderFlex overflow
       expect(tester.takeException(), isNull);
@@ -210,7 +209,8 @@ void main() {
 
       expect(find.byType(PosLoginScreen), findsOneWidget);
       expect(find.textContaining('HIROSHIMA'), findsWidgets);
-      expect(find.text('PIN Kasir'), findsOneWidget);
+      expect(find.text('Username & PIN'), findsOneWidget);
+      expect(find.text('Email & Password'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 

@@ -307,6 +307,27 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
                     LoginMode.activation => _buildActivationModeContent(),
                   },
 
+                  if (_selectedMode != LoginMode.activation) ...[
+                    const SizedBox(height: IOSSpacing.md),
+                    CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      onPressed: () {
+                        HapticFeedback.selectionClick();
+                        setState(() {
+                          _selectedMode = LoginMode.activation;
+                          _errorMessage = null;
+                        });
+                      },
+                      child: Text(
+                        'Aktivasi Perangkat Tablet Baru',
+                        style: IOSText.caption1.copyWith(
+                          color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                  ],
+
                   const SizedBox(height: IOSSpacing.xl),
                   _buildFooterInfo(),
                 ],
@@ -407,6 +428,32 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
   }
 
   Widget _buildModeSegmentedControl() {
+    if (_selectedMode == LoginMode.activation) {
+      return CupertinoButton(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        onPressed: () {
+          setState(() {
+            _selectedMode = LoginMode.pin;
+            _errorMessage = null;
+          });
+        },
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(CupertinoIcons.chevron_back, size: 16, color: IOSColors.accent.resolveFrom(context)),
+            const SizedBox(width: 4),
+            Text(
+              'Kembali ke Form Login',
+              style: IOSText.subhead.copyWith(
+                color: IOSColors.accent.resolveFrom(context),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return SizedBox(
       width: double.infinity,
       child: CupertinoSlidingSegmentedControl<LoginMode>(
@@ -416,16 +463,12 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
         padding: const EdgeInsets.all(3),
         children: {
           LoginMode.pin: const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-            child: Text('PIN Kasir', style: TextStyle(fontWeight: FontWeight.w600)),
+            padding: EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+            child: Text('Username & PIN', style: TextStyle(fontWeight: FontWeight.w600)),
           ),
           LoginMode.email: const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-            child: Text('Email & Sandi', style: TextStyle(fontWeight: FontWeight.w600)),
-          ),
-          LoginMode.activation: const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-            child: Text('Aktivasi', style: TextStyle(fontWeight: FontWeight.w600)),
+            padding: EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+            child: Text('Email & Password', style: TextStyle(fontWeight: FontWeight.w600)),
           ),
         },
         onValueChanged: (val) {
@@ -676,7 +719,7 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
           const SizedBox(height: 6),
           CupertinoTextField(
             controller: _emailController,
-            placeholder: 'nama@hiroshima.id / username',
+            placeholder: 'Masukkan email atau username',
             prefix: const Padding(
               padding: EdgeInsets.only(left: 12),
               child: Icon(CupertinoIcons.mail, size: 20, color: CupertinoColors.systemGrey),
@@ -791,17 +834,18 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
   }
 
   Widget _buildFooterInfo() {
+    final appName = PosSyncService.instance.appName;
     return Column(
       children: [
         Text(
-          'Hiroshima Japanese Street Food POS v2.2',
+          '$appName POS',
           style: IOSText.caption1.copyWith(
             color: CupertinoColors.secondaryLabel.resolveFrom(context),
           ),
         ),
         const SizedBox(height: 2),
         Text(
-          'Mode Offline-First · Enkripsi Argon2id · Paritas PHP 8.3',
+          'Mode Offline-First · Enkripsi Argon2id',
           style: IOSText.caption2.copyWith(
             color: CupertinoColors.tertiaryLabel.resolveFrom(context),
           ),
