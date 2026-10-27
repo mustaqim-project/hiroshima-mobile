@@ -935,9 +935,67 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
     );
   }
 
+  void _showBranchPicker(BuildContext context) {
+    if (!PosSyncService.instance.canSwitchBranch) return;
+
+    final branches = PosSyncService.instance.accessibleBranches;
+    if (branches.isEmpty) return;
+
+    final activeId = PosSyncService.instance.branch['id'];
+
+    showCupertinoModalPopup<void>(
+      context: context,
+      builder: (BuildContext ctx) => CupertinoActionSheet(
+        title: Text('Ganti Cabang Operasional', style: IOSText.headline),
+        message: Text('Pilih cabang untuk mengalihkan katalog, harga & transaksi', style: IOSText.caption1),
+        actions: branches.map((b) {
+          final isCurrent = b['id'] == activeId;
+          final name = b['name'] as String? ?? 'Cabang';
+          final code = b['code'] as String? ?? '';
+          return CupertinoActionSheetAction(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              if (!isCurrent) {
+                if (_cart.isNotEmpty) {
+                  _cart.clear();
+                }
+                HapticFeedback.mediumImpact();
+                await PosSyncService.instance.switchBranch(b);
+                if (mounted) {
+                  setState(() {});
+                }
+              }
+            },
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (isCurrent) ...[
+                  const Icon(CupertinoIcons.checkmark_alt, size: 18, color: Color(0xFF16A34A)),
+                  const SizedBox(width: 8),
+                ],
+                Text(
+                  '$name ($code)',
+                  style: TextStyle(
+                    fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                    color: isCurrent ? const Color(0xFF16A34A) : null,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+        cancelButton: CupertinoActionSheetAction(
+          isDefaultAction: true,
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Batal'),
+        ),
+      ),
+    );
+  }
+
   void _showCashierMenu(BuildContext context) {
     final user = PosSyncService.instance.currentUser;
-    final userName = user?['name'] as String? ?? 'Kasir Cikini';
+    final userName = user?['name'] as String? ?? (user?['username'] as String?) ?? 'Kasir';
     final userRole = user?['role'] as String? ?? 'cashier';
 
     showCupertinoModalPopup<void>(
@@ -946,6 +1004,21 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
         title: Text(userName, style: IOSText.headline),
         message: Text('Peran: $userRole · Cabang: $_branchName', style: IOSText.caption1),
         actions: <CupertinoActionSheetAction>[
+          if (PosSyncService.instance.canSwitchBranch)
+            CupertinoActionSheetAction(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _showBranchPicker(context);
+              },
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(CupertinoIcons.arrow_2_squarepath, size: 20, color: Color(0xFFDC2626)),
+                  SizedBox(width: 8),
+                  Text('Ganti Cabang Operasional', style: TextStyle(fontWeight: FontWeight.w600, color: Color(0xFFDC2626))),
+                ],
+              ),
+            ),
           CupertinoActionSheetAction(
             onPressed: () {
               Navigator.pop(ctx);
@@ -1080,18 +1153,43 @@ class _PosTabletScreenState extends State<PosTabletScreen> {
               const SizedBox(width: 8),
               Text(PosSyncService.instance.appName, style: IOSText.headline.copyWith(fontWeight: FontWeight.w800)),
               const SizedBox(width: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: IOSColors.systemFill.resolveFrom(context),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    Icon(CupertinoIcons.building_2_fill, size: 12, color: IOSColors.secondaryLabel.resolveFrom(context)),
-                    const SizedBox(width: 4),
-                    Text(_branchName, style: IOSText.caption1.copyWith(fontWeight: FontWeight.w500)),
-                  ],
+              CupertinoButton(
+                padding: EdgeInsets.zero,
+                onPressed: PosSyncService.instance.canSwitchBranch ? () => _showBranchPicker(context) : null,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: PosSyncService.instance.canSwitchBranch
+                        ? const Color(0xFFDC2626).withValues(alpha: 0.12)
+                        : IOSColors.systemFill.resolveFrom(context),
+                    borderRadius: BorderRadius.circular(12),
+                    border: PosSyncService.instance.canSwitchBranch
+                        ? Border.all(color: const Color(0xFFDC2626).withValues(alpha: 0.35), width: 0.8)
+                        : null,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        CupertinoIcons.building_2_fill,
+                        size: 12,
+                        color: PosSyncService.instance.canSwitchBranch
+                            ? const Color(0xFFDC2626)
+                            : IOSColors.secondaryLabel.resolveFrom(context),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _branchName,
+                        style: IOSText.caption1.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: PosSyncService.instance.canSwitchBranch ? const Color(0xFFDC2626) : null,
+                        ),
+                      ),
+                      if (PosSyncService.instance.canSwitchBranch) ...[
+                        const SizedBox(width: 4),
+                        const Icon(CupertinoIcons.chevron_down, size: 10, color: Color(0xFFDC2626)),
+                      ],
+                    ],
+                  ),
                 ),
               ),
             ],

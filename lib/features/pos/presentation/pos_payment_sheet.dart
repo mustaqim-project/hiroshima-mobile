@@ -116,15 +116,17 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
 
     final calc = widget.calculation;
     final branch = PosSyncService.instance.branch;
-    final branchName = (branch['name'] as String?) ?? 'Hiroshima Japanese Street Food';
-    final branchAddress = (branch['address'] as String?) ?? 'Jl. Cikini Raya No. 42, Jakarta Pusat';
-    final branchPhone = (branch['phone'] as String?) ?? '021-31900123';
+    final branchName = (branch['name'] as String?) ?? PosSyncService.instance.appName;
+    final branchAddress = (branch['address'] as String?) ?? '';
+    final branchPhone = (branch['phone'] as String?) ?? '';
+    final branchCode = (branch['code'] as String?)?.replaceAll('-', '') ?? 'HRS';
 
-    final orderNo = 'HRS01-POS-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
+    final orderNo = '$branchCode-POS-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
     final orderUuid = const Uuid().v4();
     final transactionTime = TrustedClock().now;
     final currentShift = PosSyncService.instance.currentShift;
-    const cashierName = 'Kasir Hiroshima';
+    final user = PosSyncService.instance.currentUser;
+    final cashierName = (user?['name'] as String?) ?? (user?['username'] as String?) ?? 'Kasir';
 
     // Build Payload for Backend Push (FSD-10)
     final orderPayload = {
@@ -132,7 +134,7 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
       'order_no': orderNo,
       'branch_id': branch['id'] ?? 1,
       'shift_id': currentShift?['id'],
-      'user_id': PosSyncService.instance.currentUser?['id'] ?? 1,
+      'user_id': user?['id'] ?? 1,
       'order_type_id': widget.orderTypeId,
       'table_id': widget.tableNo != null ? int.tryParse(widget.tableNo!) : null,
       'client_created_at': transactionTime.toIso8601String(),
