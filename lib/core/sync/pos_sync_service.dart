@@ -417,6 +417,11 @@ class PosSyncService extends ChangeNotifier {
         notifyListeners();
         return {'success': true, 'shift': _currentShift};
       }
+      if (response.statusCode == 410) {
+        _currentShift = null;
+        notifyListeners();
+        return {'success': true, 'shift': null, 'message': body['message']};
+      }
       return {'success': false, 'message': body['message'] ?? 'Gagal mengambil data shift'};
     } catch (e) {
       // In offline mode, keep locally mocked or active shift
@@ -455,6 +460,16 @@ class PosSyncService extends ChangeNotifier {
         notifyListeners();
         return {'success': true, 'shift': _currentShift};
       }
+      if (response.statusCode == 409) {
+        // Shift already exists! Fetch current shift to update app state immediately
+        await fetchCurrentShift();
+        return {
+          'success': false,
+          'error_code': 'ACTIVE_SHIFT_EXISTS',
+          'message': body['message'] ?? 'Kasir masih memiliki shift aktif yang belum ditutup.',
+          'shift': _currentShift,
+        };
+      }
       return {'success': false, 'message': body['message'] ?? 'Gagal membuka shift'};
     } catch (e) {
       // Offline fallback
@@ -486,6 +501,7 @@ class PosSyncService extends ChangeNotifier {
       final payload = <String, dynamic>{
         'actual_cash': actualCash,
         if (forceCancelUnfinalized) 'force_cancel_unfinalized': true,
+        if (_currentShift != null && _currentShift!['id'] != null) 'shift_id': _currentShift!['id'],
       };
       if (targetBranchId != null) {
         payload['branch_id'] = targetBranchId;

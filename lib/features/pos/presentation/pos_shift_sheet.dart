@@ -35,14 +35,22 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
   @override
   void initState() {
     super.initState();
+    PosSyncService.instance.addListener(_onSyncChange);
     PosSyncService.instance.fetchCurrentShift();
     _cashController.text = '';
   }
 
   @override
   void dispose() {
+    PosSyncService.instance.removeListener(_onSyncChange);
     _cashController.dispose();
     super.dispose();
+  }
+
+  void _onSyncChange() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   int get _parsedAmount {
@@ -73,10 +81,21 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
       Navigator.pop(context);
     } else {
       HapticFeedback.heavyImpact();
+      final msg = res['message'] as String? ?? 'Gagal membuka shift.';
       setState(() {
-        _errorMessage = res['message'] as String? ?? 'Gagal membuka shift.';
+        _errorMessage = msg;
         _lastErrorCode = res['error_code'] as String?;
       });
+
+      // If active shift exists, refresh immediately to switch view to Close Shift
+      if (res['error_code'] == 'ACTIVE_SHIFT_EXISTS' || msg.contains('shift aktif')) {
+        await PosSyncService.instance.fetchCurrentShift();
+        if (mounted) {
+          setState(() {
+            _cashController.text = '';
+          });
+        }
+      }
     }
   }
 
@@ -190,7 +209,11 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            isOpen ? 'Tutup Shift Kasir' : 'Buka Shift Kasir Baru',
+                            isOpen
+                                ? (shift?['is_other_branch'] == true
+                                    ? 'Tutup Shift (${shift?['branch_name'] ?? 'Cabang Lain'})'
+                                    : 'Tutup Shift Kasir')
+                                : 'Buka Shift Kasir Baru',
                             style: IOSText.title3.copyWith(fontWeight: FontWeight.w700),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -268,6 +291,42 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
                                 SizedBox(width: 6),
                                 Text(
                                   'Batalkan Transaksi Belum Selesai & Tutup Shift',
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: CupertinoColors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ] else if (_lastErrorCode == 'ACTIVE_SHIFT_EXISTS' || _errorMessage!.contains('shift aktif')) ...[
+                          const SizedBox(height: 10),
+                          CupertinoButton(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                            color: const Color(0xFFDC2626),
+                            borderRadius: BorderRadius.circular(8),
+                            onPressed: _isLoading
+                                ? null
+                                : () async {
+                                    setState(() => _isLoading = true);
+                                    await PosSyncService.instance.fetchCurrentShift();
+                                    if (mounted) {
+                                      setState(() {
+                                        _isLoading = false;
+                                        _errorMessage = null;
+                                        _lastErrorCode = null;
+                                        _cashController.text = '';
+                                      });
+                                    }
+                                  },
+                            child: const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(CupertinoIcons.arrow_clockwise, size: 15, color: CupertinoColors.white),
+                                SizedBox(width: 6),
+                                Text(
+                                  'Muat & Tutup Shift Aktif Ini Sekarang',
                                   style: TextStyle(
                                     fontSize: 12.5,
                                     fontWeight: FontWeight.w700,
@@ -407,20 +466,37 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
                           Text('Shift Aktif', style: IOSText.subhead),
                           Builder(builder: (ctx) {
                             final isDark = CupertinoTheme.of(ctx).brightness == Brightness.dark;
+                            final isOther = shift?['is_other_branch'] == true;
+                            final label = isOther
+                                ? 'AKTIF (${shift?['branch_name'] ?? 'CABANG LAIN'})'
+                                : 'BERJALAN';
+
+                            final bgColor = isOther
+                                ? (isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.4) : const Color(0xFFDBEAFE))
+                                : (isDark ? const Color(0xFF064E3B) : const Color(0xFFDCFCE7));
+
+                            final borderColor = isOther
+                                ? (isDark ? const Color(0xFF3B82F6) : const Color(0xFF93C5FD))
+                                : (isDark ? const Color(0xFF047857) : const Color(0xFF86EFAC));
+
+                            final textColor = isOther
+                                ? (isDark ? const Color(0xFF93C5FD) : const Color(0xFF1E40AF))
+                                : (isDark ? const Color(0xFF6EE7B7) : const Color(0xFF166534));
+
                             return Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                               decoration: BoxDecoration(
-                                color: isDark ? const Color(0xFF064E3B) : const Color(0xFFDCFCE7),
+                                color: bgColor,
                                 borderRadius: BorderRadius.circular(10),
                                 border: Border.all(
-                                  color: isDark ? const Color(0xFF047857) : const Color(0xFF86EFAC),
+                                  color: borderColor,
                                   width: 0.5,
                                 ),
                               ),
                               child: Text(
-                                'BERJALAN',
+                                label,
                                 style: TextStyle(
-                                  color: isDark ? const Color(0xFF6EE7B7) : const Color(0xFF166534),
+                                  color: textColor,
                                   fontSize: 11,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -429,6 +505,46 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
                           }),
                         ],
                       ),
+                      if (shift?['is_other_branch'] == true) ...[
+                        const SizedBox(height: 10),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: CupertinoTheme.of(context).brightness == Brightness.dark
+                                ? const Color(0xFF1E3A8A).withValues(alpha: 0.3)
+                                : const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: CupertinoTheme.of(context).brightness == Brightness.dark
+                                  ? const Color(0xFF3B82F6)
+                                  : const Color(0xFFBFDBFE),
+                              width: 0.5,
+                            ),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Padding(
+                                padding: EdgeInsets.only(top: 2),
+                                child: Icon(CupertinoIcons.info_circle_fill, color: Color(0xFF2563EB), size: 16),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Shift #${shift?['id']} ini aktif di ${shift?['branch_name'] ?? 'cabang lain'}. Harap tutup shift ini untuk menyelesaikan sesi kasir atau membuka shift di cabang saat ini.',
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    color: CupertinoTheme.of(context).brightness == Brightness.dark
+                                        ? const Color(0xFF93C5FD)
+                                        : const Color(0xFF1E40AF),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 10),
 
                       _buildInfoRow('Modal Awal Kasir', _currency.format((shift?['starting_cash'] as num?)?.toInt() ?? 0)),

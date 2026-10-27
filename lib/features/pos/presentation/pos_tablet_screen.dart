@@ -1596,8 +1596,14 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
               IOSIconButton(
                 icon: CupertinoIcons.money_dollar_circle_fill,
                 semanticLabel: 'Kelola Shift Kasir',
-                color: syncService.hasActiveShift ? IOSColors.success.resolveFrom(context) : IOSColors.accent.resolveFrom(context),
-                badge: syncService.hasActiveShift ? 'SHIFT' : 'TUTUP',
+                color: syncService.hasActiveShift
+                    ? (syncService.currentShift?['is_other_branch'] == true
+                        ? IOSColors.warning.resolveFrom(context)
+                        : IOSColors.success.resolveFrom(context))
+                    : IOSColors.accent.resolveFrom(context),
+                badge: syncService.hasActiveShift
+                    ? (syncService.currentShift?['is_other_branch'] == true ? 'SHIFT CABANG' : 'SHIFT')
+                    : 'TUTUP',
                 onPressed: () => PosShiftSheet.show(context),
               ),
               const SizedBox(width: 6),

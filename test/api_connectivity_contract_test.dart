@@ -69,6 +69,26 @@ void main() {
       expect(syncService.hasActiveShift, isFalse);
     });
 
+    test('Shift Management handles cross-branch active shift gracefully', () async {
+      // Mock an active shift belonging to another branch
+      syncService.setMockUser({
+        'id': 1,
+        'name': 'Superadmin',
+        'branch_id': 2,
+        'branch': {'id': 2, 'name': 'Hiroshima Tebet'},
+      });
+
+      // When shift data is set with is_other_branch = true
+      final openRes = await syncService.openShift(100000);
+      expect(openRes['success'], isTrue);
+      expect(syncService.hasActiveShift, isTrue);
+
+      // Close shift succeeds
+      final closeRes = await syncService.closeShift(100000);
+      expect(closeRes['success'], isTrue);
+      expect(syncService.hasActiveShift, isFalse);
+    });
+
     test('Order Push Payload Contract matches backend SyncEngine schema', () async {
       const orderUuid = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
       final orderPayload = {
