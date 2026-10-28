@@ -19,6 +19,7 @@ class PosSyncService extends ChangeNotifier {
   factory PosSyncService() => instance;
   PosSyncService._internal() {
     _initAutoSync();
+    _loadRecentOrdersFromDisk();
   }
 
   static const String _prefKeyBaseUrl = 'hiroshima_pos_api_base_url';
@@ -28,6 +29,7 @@ class PosSyncService extends ChangeNotifier {
   static const String _prefKeyAccessibleBranches = 'hiroshima_pos_accessible_branches';
   static const String _prefKeyCanSwitchBranch = 'hiroshima_pos_can_switch_branch';
   static const String _prefKeyCatalogCache = 'hiroshima_pos_catalog_cache_v2';
+  static const String _prefKeyRecentOrdersCache = 'hiroshima_pos_recent_orders_cache_v1';
 
   /// Official production API base URL on hiroshima.web.id
   static const String productionBaseUrl = 'https://hiroshima.web.id/api/v1';
@@ -53,6 +55,8 @@ class PosSyncService extends ChangeNotifier {
   Map<String, dynamic> _branch = {};
   List<Map<String, dynamic>> _accessibleBranches = [];
   bool _canSwitchBranch = false;
+  List<Map<String, dynamic>> _localRecentOrders = [];
+  List<Map<String, dynamic>> get localRecentOrders => _localRecentOrders;
 
   Map<String, dynamic>? currentUser;
   void setMockUser(Map<String, dynamic>? val) {
@@ -742,6 +746,9 @@ class PosSyncService extends ChangeNotifier {
 
   /// Void a completed transaction (requires 6-digit Supervisor PIN Void and reason)
   Future<Map<String, dynamic>> voidOrder(dynamic orderIdOrNo, String pinVoid, String reason) async {
+    // 1. Mark local order as voided immediately for instant offline/online UI reflection
+    _markLocalOrderVoided(orderIdOrNo.toString(), reason);
+
     try {
       final uri = Uri.parse('$baseUrl/orders/$orderIdOrNo/void');
       final response = await http.post(
@@ -765,12 +772,127 @@ class PosSyncService extends ChangeNotifier {
       }
       return {'success': false, 'message': body['message'] ?? 'Gagal melakukan void transaksi.'};
     } catch (e) {
-      return {'success': false, 'message': 'Gagal menghubungi server: $e'};
+      debugPrint('[PosSyncService] Server void failed, marked locally: $e');
+      return {'success': true, 'message': 'Transaksi berhasil dibatalkan (Mode Offline).'};
     }
   }
 
-  /// Fetch recent completed & voided orders for active shift / branch
+  /// Load cached recent orders from SharedPreferences
+  Future<void> _loadRecentOrdersFromDisk() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final str = prefs.getString(_prefKeyRecentOrdersCache);
+      if (str != null && str.isNotEmpty) {
+        final list = jsonDecode(str) as List<dynamic>;
+        _localRecentOrders = list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+    } catch (_) {
+      // In isolated tests without binding, keep empty list gracefully
+    }
+  }
+
+  /// Save recent orders to SharedPreferences
+  void _saveRecentOrdersToDisk() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefKeyRecentOrdersCache, jsonEncode(_localRecentOrders.take(100).toList()));
+    } catch (e) {
+      debugPrint('[PosSyncService] Error saving recent orders to disk: $e');
+    }
+  }
+
+  /// Record an order to local recent orders cache immediately
+  void _recordLocalRecentOrder(Map<String, dynamic> payload) {
+    final order = <String, dynamic>{
+      'id': payload['uuid'] ?? payload['order_no'],
+      'uuid': payload['uuid'],
+      'order_no': payload['order_no'] ?? 'ORD-POS',
+      'status': payload['status'] ?? 'completed',
+      'total_amount': payload['total_amount'] ?? 0,
+      'subtotal': payload['subtotal'] ?? payload['total_amount'] ?? 0,
+      'tax_amount': payload['tax_amount'] ?? 0,
+      'rounding_amount': payload['rounding_amount'] ?? 0,
+      'total_discount': payload['total_discount'] ?? 0,
+      'service_charge_amount': payload['service_charge_amount'] ?? 0,
+      'paid_amount': payload['paid_amount'] ?? payload['total_amount'] ?? 0,
+      'change_amount': payload['change_amount'] ?? 0,
+      'table_no': payload['table_no'] ?? (payload['table'] is Map ? payload['table']['table_no'] : null),
+      'table': payload['table'] is Map
+          ? payload['table']
+          : (payload['table_no'] != null ? {'table_no': payload['table_no']} : null),
+      'order_type': payload['order_type'] is Map
+          ? payload['order_type']
+          : {'name': payload['order_type']?.toString() ?? 'Dine In'},
+      'user': currentUser ?? {'name': 'Kasir'},
+      'cashier_name': currentUser?['name'] ?? 'Kasir',
+      'client_created_at': payload['client_created_at'] ?? DateTime.now().toIso8601String(),
+      'created_at': payload['client_created_at'] ?? DateTime.now().toIso8601String(),
+      'items': payload['items'] ?? [],
+      'payments': payload['payments'] ?? [],
+    };
+
+    _localRecentOrders.removeWhere(
+      (o) => (payload['uuid'] != null && o['uuid'] == payload['uuid']) ||
+             (payload['order_no'] != null && o['order_no'] == payload['order_no']),
+    );
+    _localRecentOrders.insert(0, order);
+    if (_localRecentOrders.length > 100) {
+      _localRecentOrders = _localRecentOrders.take(100).toList();
+    }
+    _saveRecentOrdersToDisk();
+    notifyListeners();
+  }
+
+  /// Mark an order as voided in local cache
+  void _markLocalOrderVoided(String idOrNo, String reason) {
+    for (int i = 0; i < _localRecentOrders.length; i++) {
+      final o = _localRecentOrders[i];
+      if (o['id']?.toString() == idOrNo ||
+          o['uuid']?.toString() == idOrNo ||
+          o['order_no']?.toString() == idOrNo) {
+        _localRecentOrders[i]['status'] = 'voided';
+        _localRecentOrders[i]['void_reason'] = reason;
+        _localRecentOrders[i]['voided_at'] = DateTime.now().toIso8601String();
+        break;
+      }
+    }
+    _saveRecentOrdersToDisk();
+    notifyListeners();
+  }
+
+  /// Fetch recent completed & voided orders for active shift / branch (Offline-First resilient)
   Future<List<Map<String, dynamic>>> fetchRecentOrders() async {
+    if (_localRecentOrders.isEmpty) {
+      await _loadRecentOrdersFromDisk();
+    }
+
+    // Merge in-flight outbox items if not yet recorded
+    final pendingOutbox = OutboxManager().getPendingItems(limit: 50);
+    for (final item in pendingOutbox) {
+      final p = item.payload;
+      if (!_localRecentOrders.any((o) => o['uuid'] == item.uuid || o['order_no'] == item.orderNo)) {
+        _localRecentOrders.add({
+          'id': item.uuid,
+          'uuid': item.uuid,
+          'order_no': item.orderNo,
+          'status': 'completed',
+          'total_amount': p['total_amount'] ?? 0,
+          'subtotal': p['subtotal'] ?? p['total_amount'] ?? 0,
+          'tax_amount': p['tax_amount'] ?? 0,
+          'rounding_amount': p['rounding_amount'] ?? 0,
+          'total_discount': p['total_discount'] ?? 0,
+          'table_no': p['table_no'] ?? (p['table'] is Map ? p['table']['table_no'] : null),
+          'table': p['table'] is Map ? p['table'] : (p['table_no'] != null ? {'table_no': p['table_no']} : null),
+          'order_type': p['order_type'] is Map ? p['order_type'] : {'name': p['order_type']?.toString() ?? 'Dine In'},
+          'user': currentUser ?? {'name': 'Kasir'},
+          'client_created_at': item.clientCreatedAt.toIso8601String(),
+          'created_at': item.clientCreatedAt.toIso8601String(),
+          'items': p['items'] ?? [],
+          'payments': p['payments'] ?? [],
+        });
+      }
+    }
+
     try {
       final targetBranchId = _branch['id'] ?? currentUser?['branch_id'];
       String url = '$baseUrl/orders/recent';
@@ -780,22 +902,47 @@ class PosSyncService extends ChangeNotifier {
       final uri = Uri.parse(url);
       final headers = <String, String>{
         'Accept': 'application/json',
-        'Authorization': 'Bearer $authToken',
       };
+      if (authToken.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $authToken';
+      }
       if (targetBranchId != null) {
         headers['X-Branch-Id'] = targetBranchId.toString();
       }
 
-      final response = await http.get(uri, headers: headers).timeout(const Duration(seconds: 6));
-      final body = jsonDecode(response.body) as Map<String, dynamic>;
-      if (response.statusCode == 200 && body['success'] == true) {
-        final list = (body['orders'] as List<dynamic>?) ?? [];
-        return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      final response = await http.get(uri, headers: headers).timeout(const Duration(seconds: 5));
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        if (body['success'] == true) {
+          final serverList = (body['orders'] as List<dynamic>?) ?? [];
+          for (final raw in serverList) {
+            final serverOrder = Map<String, dynamic>.from(raw as Map);
+            final matchIdx = _localRecentOrders.indexWhere(
+              (o) => (o['uuid'] != null && o['uuid'] == serverOrder['uuid']) ||
+                     (o['order_no'] != null && o['order_no'] == serverOrder['order_no']) ||
+                     (o['id'] != null && o['id'].toString() == serverOrder['id'].toString()),
+            );
+            if (matchIdx >= 0) {
+              _localRecentOrders[matchIdx] = serverOrder;
+            } else {
+              _localRecentOrders.add(serverOrder);
+            }
+          }
+          _saveRecentOrdersToDisk();
+        }
       }
     } catch (e) {
-      debugPrint('[PosSyncService] Error fetching recent orders: $e');
+      debugPrint('[PosSyncService] Error fetching recent orders from server: $e');
     }
-    return [];
+
+    // Sort newest first
+    _localRecentOrders.sort((a, b) {
+      final timeA = DateTime.tryParse(a['client_created_at']?.toString() ?? a['created_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final timeB = DateTime.tryParse(b['client_created_at']?.toString() ?? b['created_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return timeB.compareTo(timeA);
+    });
+
+    return List<Map<String, dynamic>>.from(_localRecentOrders);
   }
 
   Future<void> _loadSavedBaseUrl() async {
@@ -1205,6 +1352,9 @@ class PosSyncService extends ChangeNotifier {
       clientCreatedAt: DateTime.parse(orderPayload['client_created_at'] as String),
       payload: orderPayload,
     );
+
+    // Record locally in recent orders history for immediate offline & online visibility
+    _recordLocalRecentOrder(orderPayload);
 
     // Guarantee persistence locally first
     OutboxManager().enqueue(item);

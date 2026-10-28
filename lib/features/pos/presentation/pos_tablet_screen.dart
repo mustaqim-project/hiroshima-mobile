@@ -2878,11 +2878,16 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
     final totalAmount = (order['total_amount'] as num?)?.toInt() ?? 0;
     final paidAmount = (order['paid_amount'] as num?)?.toInt() ?? totalAmount;
     final changeAmount = (order['change_amount'] as num?)?.toInt() ?? 0;
-    final cashierName = order['user']?['name'] ?? order['user']?['username'] ?? 'Kasir';
-    final orderTypeName = order['order_type']?['name'] ?? 'Dine In';
-    final tableNo = order['table']?['table_no']?.toString();
-    final transactionTime = order['client_created_at'] != null 
-        ? DateTime.tryParse(order['client_created_at']) ?? DateTime.now()
+    final cashierName = order['user']?['name'] ?? order['user']?['username'] ?? order['cashier_name'] ?? 'Kasir';
+    final orderTypeName = order['order_type'] is Map
+        ? (order['order_type']['name'] as String? ?? 'Dine In')
+        : (order['order_type']?.toString() ?? 'Dine In');
+    final tableNo = order['table'] is Map
+        ? (order['table']['table_no']?.toString())
+        : (order['table_no']?.toString());
+    final timeRaw = order['client_created_at'] ?? order['created_at'];
+    final transactionTime = timeRaw != null 
+        ? DateTime.tryParse(timeRaw.toString()) ?? DateTime.now()
         : DateTime.now();
 
     showCupertinoDialog(
@@ -3002,7 +3007,10 @@ class _RecentOrdersModalState extends State<_RecentOrdersModal> {
     if (q.isEmpty) return _orders;
     return _orders.where((o) {
       final orderNo = (o['order_no'] as String? ?? '').toLowerCase();
-      final table = (o['table']?['table_no']?.toString() ?? '').toLowerCase();
+      final table = ((o['table'] is Map
+              ? o['table']['table_no']?.toString()
+              : o['table_no']?.toString()) ?? '')
+          .toLowerCase();
       final cust = (o['customer_id']?.toString() ?? '').toLowerCase();
       return orderNo.contains(q) || table.contains(q) || cust.contains(q);
     }).toList();
@@ -3059,7 +3067,12 @@ class _RecentOrdersModalState extends State<_RecentOrdersModal> {
                         children: [
                           Text('Riwayat Transaksi & Void (FSD-08)', style: IOSText.headline),
                           const SizedBox(height: 1),
-                          Text('Ketuk transaksi untuk Cetak Ulang atau Void Transaksi', style: IOSText.caption1),
+                          Text(
+                            _orders.isEmpty
+                                ? 'Ketuk transaksi untuk Cetak Ulang atau Void Transaksi'
+                                : '${_orders.length} transaksi tercatat • Ketuk untuk Cetak Ulang / Void',
+                            style: IOSText.caption1,
+                          ),
                         ],
                       ),
                     ),
@@ -3101,13 +3114,45 @@ class _RecentOrdersModalState extends State<_RecentOrdersModal> {
                     ? const Center(child: CupertinoActivityIndicator(radius: 14))
                     : _filteredOrders.isEmpty
                         ? Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(CupertinoIcons.tray, size: 48, color: IOSColors.tertiaryLabel.resolveFrom(context)),
-                                const SizedBox(height: 8),
-                                Text('Tidak ada transaksi ditemukan', style: IOSText.subhead),
-                              ],
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 24),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(CupertinoIcons.tray, size: 52, color: IOSColors.tertiaryLabel.resolveFrom(context)),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    _searchCtrl.text.isNotEmpty
+                                        ? 'Tidak ada transaksi dengan kata kunci "${_searchCtrl.text}"'
+                                        : 'Belum Ada Transaksi Tercatat',
+                                    style: IOSText.subhead.copyWith(fontWeight: FontWeight.bold),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    _searchCtrl.text.isNotEmpty
+                                        ? 'Periksa kembali nomor struk atau nomor meja pencarian.'
+                                        : 'Transaksi yang telah diselesaikan di kasir akan muncul di sini untuk Cetak Ulang Struk atau Void Transaksi.',
+                                    style: IOSText.caption1,
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  CupertinoButton(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                    color: IOSColors.secondaryGroupedBackground.resolveFrom(context),
+                                    borderRadius: BorderRadius.circular(10),
+                                    onPressed: _loadOrders,
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(CupertinoIcons.arrow_clockwise, size: 14, color: IOSColors.accent.resolveFrom(context)),
+                                        const SizedBox(width: 6),
+                                        Text('Segarkan Riwayat', style: TextStyle(fontSize: 13, color: IOSColors.accent.resolveFrom(context), fontWeight: FontWeight.w600)),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           )
                         : ListView.separated(
@@ -3119,9 +3164,15 @@ class _RecentOrdersModalState extends State<_RecentOrdersModal> {
                               final isVoid = o['status'] == 'voided';
                               final orderNo = o['order_no'] as String? ?? 'HRS-POS';
                               final total = (o['total_amount'] as num?)?.toInt() ?? 0;
-                              final typeName = o['order_type']?['name'] as String? ?? 'Dine In';
-                              final timeStr = o['client_created_at'] != null
-                                  ? DateFormat('dd/MM HH:mm').format(DateTime.tryParse(o['client_created_at']) ?? DateTime.now())
+                              final typeName = o['order_type'] is Map
+                                  ? (o['order_type']['name'] as String? ?? 'Dine In')
+                                  : (o['order_type']?.toString() ?? 'Dine In');
+                              final tableStr = o['table'] is Map
+                                  ? (o['table']['table_no']?.toString())
+                                  : (o['table_no']?.toString());
+                              final timeRaw = o['client_created_at'] ?? o['created_at'];
+                              final timeStr = timeRaw != null
+                                  ? DateFormat('dd/MM HH:mm').format(DateTime.tryParse(timeRaw.toString()) ?? DateTime.now())
                                   : '-';
                               final itemsCount = (o['items'] as List?)?.length ?? 0;
 
@@ -3173,6 +3224,17 @@ class _RecentOrdersModalState extends State<_RecentOrdersModal> {
                                                   ),
                                                   child: Text(typeName, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600)),
                                                 ),
+                                                if (tableStr != null && tableStr.isNotEmpty) ...[
+                                                  const SizedBox(width: 6),
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                    decoration: BoxDecoration(
+                                                      color: IOSColors.tertiarySystemFill.resolveFrom(context),
+                                                      borderRadius: BorderRadius.circular(6),
+                                                    ),
+                                                    child: Text('Meja $tableStr', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600)),
+                                                  ),
+                                                ],
                                               ],
                                             ),
                                             const SizedBox(height: 3),
