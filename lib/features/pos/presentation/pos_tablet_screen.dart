@@ -2,10 +2,12 @@
 // Apple HIG Multi-Platform POS Screen for Hiroshima Japanese Street Food
 // Responsive Phone + Tablet (iOS + Android) · 100% Dynamic Backend Data · Panda POS Bluetooth Thermal Print
 
+import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Colors, ScaffoldMessenger, SnackBar, SnackBarBehavior, Theme;
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/pricing/order_calculator.dart';
 import '../../../core/printing/pos_printer_sheet.dart';
 import '../../../core/printing/thermal_printer_service.dart';
@@ -20,6 +22,7 @@ import 'pos_modifier_dialog.dart';
 import 'pos_payment_sheet.dart';
 import 'pos_receipt_dialog.dart';
 import 'pos_shift_sheet.dart';
+import 'pos_close_shift_report_dialog.dart';
 import '../../auth/presentation/pos_login_screen.dart';
 
 class PosTabletScreen extends StatefulWidget {
@@ -43,6 +46,58 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
   // Cart: [{ 'id', 'name', 'price', 'qty', 'variant_id', 'variant_name', 'modifiers', 'notes' }]
   final List<Map<String, dynamic>> _cart = [];
 
+  static const String _prefKeyCartDraft = 'hiroshima_pos_active_cart_draft_v1';
+
+  void _saveCartDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (_cart.isEmpty) {
+        await prefs.remove(_prefKeyCartDraft);
+      } else {
+        final data = {
+          'cart': _cart,
+          'selectedTableNo': _selectedTableNo,
+          'selectedOrderTypeId': _selectedOrderTypeId,
+          'manualDiscount': _manualDiscount,
+          'resumedOrderId': _resumedOrderId,
+        };
+        await prefs.setString(_prefKeyCartDraft, jsonEncode(data));
+      }
+    } catch (_) {}
+  }
+
+  void _loadCartDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final str = prefs.getString(_prefKeyCartDraft);
+      if (str != null && str.isNotEmpty && mounted) {
+        final data = jsonDecode(str) as Map<String, dynamic>;
+        final savedCart = (data['cart'] as List<dynamic>?) ?? [];
+        if (savedCart.isNotEmpty) {
+          setState(() {
+            _cart.clear();
+            for (final item in savedCart) {
+              _cart.add(Map<String, dynamic>.from(item as Map));
+            }
+            _selectedTableNo = data['selectedTableNo'] as String?;
+            if (data['selectedOrderTypeId'] != null) {
+              _selectedOrderTypeIdState = data['selectedOrderTypeId'] as int?;
+            }
+            _manualDiscount = (data['manualDiscount'] as num?)?.toInt() ?? 0;
+            _resumedOrderId = data['resumedOrderId'] as int?;
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  void _clearCartDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_prefKeyCartDraft);
+    } catch (_) {}
+  }
+
   @override
   void initState() {
     super.initState();
@@ -53,7 +108,9 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
 
     // Initial backend fetch & auto-sync start
     PosSyncService.instance.fetchCatalog();
+    PosSyncService.instance.fetchCurrentShift();
     PosSyncService.instance.startAutoSync();
+    _loadCartDraft();
   }
 
   @override
@@ -70,6 +127,9 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      PosSyncService.instance.fetchCurrentShift();
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive || state == AppLifecycleState.detached) {
+      _saveCartDraft();
     }
   }
 
@@ -340,6 +400,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
         });
       }
     });
+    _saveCartDraft();
     HapticFeedback.lightImpact();
   }
 
@@ -352,6 +413,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
         _cart[index]['qty'] = newQty;
       }
     });
+    _saveCartDraft();
     if (modalSetState != null) {
       modalSetState(() {});
     }
@@ -605,6 +667,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                   onPressed: () {
                     Navigator.pop(ctx);
                     setState(() => _manualDiscount = 0);
+                    _saveCartDraft();
                     if (modalSetState != null) modalSetState(() {});
                   },
                 ),
@@ -622,6 +685,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
 
                   if (finalDiscount <= 0) {
                     setState(() => _manualDiscount = 0);
+                    _saveCartDraft();
                     if (modalSetState != null) modalSetState(() {});
                     return;
                   }
@@ -635,6 +699,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                       reason: reasonStr,
                       onAuthorized: () {
                         setState(() => _manualDiscount = finalDiscount);
+                        _saveCartDraft();
                         if (modalSetState != null) modalSetState(() {});
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
@@ -645,6 +710,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                     );
                   } else {
                     setState(() => _manualDiscount = finalDiscount);
+                    _saveCartDraft();
                     if (modalSetState != null) modalSetState(() {});
                   }
                 },
@@ -783,6 +849,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
           _selectedTableNo = null;
           _resumedOrderId = null;
         });
+        _clearCartDraft();
       },
     );
   }
@@ -795,7 +862,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
         context: context,
         builder: (ctx) => CupertinoAlertDialog(
           title: const Text('Shift Belum Dibuka'),
-          content: const Text('Harap buka shift kasir terlebih dahulu sebelum menahan transaksi.'),
+          content: const Text('Harap buka shift kasir terlebih dahulu sebelum membuka transaksi Open Bill.'),
           actions: [
             CupertinoDialogAction(
               isDefaultAction: true,
@@ -820,8 +887,8 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
       showCupertinoDialog(
         context: context,
         builder: (ctx) => CupertinoAlertDialog(
-          title: const Text('Fitur Hold Bill Dinonaktifkan'),
-          content: const Text('Fitur Tahan Pesanan (Hold Bill) dinonaktifkan oleh pengaturan Back Office.'),
+          title: const Text('Fitur Open Bill Dinonaktifkan'),
+          content: const Text('Fitur Open Bill dinonaktifkan oleh pengaturan Back Office.'),
           actions: [
             CupertinoDialogAction(
               onPressed: () => Navigator.pop(ctx),
@@ -839,17 +906,17 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
     showCupertinoDialog(
       context: context,
       builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('Tahan Pesanan (Hold Bill)'),
+        title: const Text('Buka Open Bill (Kirim ke Dapur)'),
         content: Padding(
           padding: const EdgeInsets.only(top: 10),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('Simpan transaksi ini sementara untuk melayani pelanggan berikutnya.'),
+              const Text('Pesanan akan disimpan dalam status Open Bill (belum bayar) dan tiket pesanan langsung dicetak ke dapur.'),
               const SizedBox(height: 10),
               CupertinoTextField(
                 controller: refController,
-                placeholder: 'Label / Nama Pemesan (cth: Meja 4 / Pak Budi)',
+                placeholder: 'Label / Nama Meja / Tamu (cth: Meja 4 / Budi)',
                 placeholderStyle: TextStyle(
                   color: CupertinoColors.placeholderText.resolveFrom(context),
                   fontSize: 13,
@@ -863,7 +930,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
               const SizedBox(height: 8),
               CupertinoTextField(
                 controller: notesController,
-                placeholder: 'Catatan tambahan (opsional)',
+                placeholder: 'Catatan tambahan pesanan (opsional)',
                 placeholderStyle: TextStyle(
                   color: CupertinoColors.placeholderText.resolveFrom(context),
                   fontSize: 13,
@@ -887,15 +954,29 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
             isDefaultAction: true,
             onPressed: () async {
               Navigator.pop(ctx);
+
+              final cartSnapshot = List<Map<String, dynamic>>.from(_cart);
+              final tableSnapshot = _selectedTableNo;
+              final orderTypeSnapshot = _selectedOrderTypeName;
+              final calcSnapshot = _calculation;
+              final branch = PosSyncService.instance.branch;
+              final branchName = (branch['name'] as String?) ?? 'Hiroshima Japanese Street Food';
+              final now = DateTime.now();
+
               final payload = {
                 'shift_id': PosSyncService.instance.currentShift?['id'],
                 'order_type_id': _selectedOrderTypeId,
                 'table_id': _selectedTableNo != null ? int.tryParse(_selectedTableNo!) : null,
                 'hold_reference': refController.text.trim().isNotEmpty
                     ? refController.text.trim()
-                    : 'Bill ${DateFormat('HH:mm').format(DateTime.now())}',
+                    : (_selectedTableNo != null ? 'Meja $_selectedTableNo' : 'Bill ${DateFormat('HH:mm').format(DateTime.now())}'),
                 'hold_notes': notesController.text.trim(),
                 'manual_discount': _manualDiscount,
+                'total_amount': calcSnapshot.totalAmount,
+                'subtotal': calcSnapshot.subtotal,
+                'tax_amount': calcSnapshot.taxAmount,
+                'service_charge_amount': calcSnapshot.serviceChargeAmount,
+                'rounding_amount': calcSnapshot.roundingAmount,
                 'items': _cart.map((item) => {
                   'product_id': item['id'],
                   'product_variant_id': item['variant_id'],
@@ -916,14 +997,55 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
               final res = await PosSyncService.instance.holdOrder(payload);
               if (res['success'] == true) {
                 HapticFeedback.mediumImpact();
+
+                // 1. PRINT PERTAMA: DAPUR (Wajib cetak tiket dapur terlebih dahulu)
+                String printFeedback = '';
+                if (ThermalPrinterService.instance.autoPrintOnCheckout) {
+                  final orderData = res['order'] as Map<String, dynamic>?;
+                  final orderNo = orderData?['order_no']?.toString() ?? 'OPEN-${now.millisecondsSinceEpoch.toString().substring(7)}';
+
+                  final printRes = await ThermalPrinterService.instance.printKitchenTicketOnly(
+                    branchName: branchName,
+                    orderNo: orderNo,
+                    tableNo: tableSnapshot,
+                    orderTypeName: orderTypeSnapshot,
+                    transactionTime: now,
+                    items: cartSnapshot,
+                    targetStation: 'DAPUR',
+                  );
+
+                  printFeedback = printRes.success
+                      ? 'Tiket Dapur berhasil dicetak.'
+                      : 'Printer Dapur: ${printRes.message}';
+                }
+
                 setState(() {
                   _cart.clear();
                   _manualDiscount = 0;
                   _selectedTableNo = null;
                   _resumedOrderId = null;
                 });
+                _clearCartDraft();
+
                 if (dismissCurrentModal && mounted) {
                   Navigator.pop(context);
+                }
+
+                if (mounted) {
+                  showCupertinoDialog(
+                    context: context,
+                    builder: (alertCtx) => CupertinoAlertDialog(
+                      title: const Text('Open Bill Berhasil Disimpan'),
+                      content: Text('Pesanan berhasil disimpan dalam status belum bayar.${printFeedback.isNotEmpty ? '\n\n$printFeedback' : ''}'),
+                      actions: [
+                        CupertinoDialogAction(
+                          isDefaultAction: true,
+                          onPressed: () => Navigator.pop(alertCtx),
+                          child: const Text('OK'),
+                        ),
+                      ],
+                    ),
+                  );
                 }
               } else {
                 HapticFeedback.heavyImpact();
@@ -931,7 +1053,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                   showCupertinoDialog(
                     context: context,
                     builder: (errCtx) => CupertinoAlertDialog(
-                      title: const Text('Gagal Menahan Bill'),
+                      title: const Text('Gagal Membuka Open Bill'),
                       content: Text(res['message'] as String? ?? 'Terjadi kesalahan.'),
                       actions: [
                         CupertinoDialogAction(
@@ -944,7 +1066,144 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                 }
               }
             },
-            child: const Text('Simpan Hold Bill'),
+            child: const Text('Simpan & Cetak Dapur'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _handleSaveBackToHoldBill({bool dismissCurrentModal = false, VoidCallback? onDone}) async {
+    if (_resumedOrderId == null) return;
+    final orderId = _resumedOrderId!;
+
+    final calcSnapshot = _calculation;
+    final payload = {
+      'table_id': _selectedTableNo != null ? int.tryParse(_selectedTableNo!) : null,
+      'table_no': _selectedTableNo,
+      'manual_discount': _manualDiscount,
+      'total_amount': calcSnapshot.totalAmount,
+      'subtotal': calcSnapshot.subtotal,
+      'tax_amount': calcSnapshot.taxAmount,
+      'service_charge_amount': calcSnapshot.serviceChargeAmount,
+      'rounding_amount': calcSnapshot.roundingAmount,
+      'items': _cart.map((item) => {
+        'product_id': item['id'],
+        'product_variant_id': item['variant_id'],
+        'product_name': item['name'],
+        'variant_name': item['variant_name'],
+        'quantity': item['qty'],
+        'unit_price': item['price'],
+        'notes': item['notes'],
+        'modifiers': ((item['modifiers'] as List<dynamic>?) ?? []).map((m) => {
+          'modifier_id': m['modifier_id'] ?? m['id'],
+          'modifier_name': m['name'] ?? m['modifier_name'],
+          'unit_price': m['price'] ?? m['unit_price'] ?? 0,
+          'quantity': 1,
+        }).toList(),
+      }).toList(),
+    };
+
+    await PosSyncService.instance.reHoldOrder(orderId, payload);
+
+    setState(() {
+      _cart.clear();
+      _manualDiscount = 0;
+      _selectedTableNo = null;
+      _resumedOrderId = null;
+    });
+    _clearCartDraft();
+
+    if (onDone != null) onDone();
+
+    if (dismissCurrentModal && mounted && Navigator.canPop(context)) {
+      Navigator.pop(context);
+    }
+
+    if (mounted) {
+      showCupertinoDialog(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text('Open Bill Tetap Tersimpan'),
+          content: Text('Transaksi Open Bill #$orderId tetap tersimpan aman di antrean meja.\nTidak ada bill yang hilang.'),
+          actions: [
+            CupertinoDialogAction(
+              isDefaultAction: true,
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  void _promptCancelResumedHoldBill({StateSetter? setModalState, bool dismissModal = false}) {
+    if (_resumedOrderId == null) return;
+    final orderId = _resumedOrderId!;
+    final reasonController = TextEditingController(text: 'Pelanggan membatalkan pesanan');
+
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: Text('Batalkan Open Bill #$orderId (Void)'),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Pesanan ini sudah dikirim ke dapur. Masukkan alasan pembatalan resmi untuk audit log anti-fraud:'),
+              const SizedBox(height: 10),
+              CupertinoTextField(
+                controller: reasonController,
+                placeholder: 'Alasan pembatalan...',
+                padding: const EdgeInsets.all(10),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Kembali'),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final reason = reasonController.text.trim();
+              if (reason.isEmpty) return;
+              final res = await PosSyncService.instance.cancelHeldOrder(orderId, reason);
+              if (res['success'] == true) {
+                setState(() {
+                  _cart.clear();
+                  _manualDiscount = 0;
+                  _selectedTableNo = null;
+                  _resumedOrderId = null;
+                });
+                _clearCartDraft();
+                if (setModalState != null) setModalState(() {});
+                if (dismissModal && mounted && Navigator.canPop(context)) {
+                  Navigator.pop(context);
+                }
+                if (mounted) {
+                  showCupertinoDialog(
+                    context: context,
+                    builder: (alertCtx) => CupertinoAlertDialog(
+                      title: const Text('Pesanan Resmi Dibatalkan'),
+                      content: Text('Open Bill #$orderId telah dibatalkan dengan alasan: "$reason" dan tercatat pada audit log.'),
+                      actions: [
+                        CupertinoDialogAction(
+                          onPressed: () => Navigator.pop(alertCtx),
+                          child: const Text('OK'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text('Konfirmasi Void'),
           ),
         ],
       ),
@@ -980,9 +1239,9 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                       children: [
                         Row(
                           children: [
-                            Icon(CupertinoIcons.pause_circle_fill, color: IOSColors.warning.resolveFrom(context), size: 22),
+                            Icon(CupertinoIcons.tray_full_fill, color: IOSColors.warning.resolveFrom(context), size: 22),
                             const SizedBox(width: 8),
-                            Text('Daftar Transaksi Ditahan (Hold Bill)', style: IOSText.headline.copyWith(color: IOSColors.label.resolveFrom(context))),
+                            Text('Daftar Transaksi Open Bill (Meja Terisi)', style: IOSText.headline.copyWith(color: IOSColors.label.resolveFrom(context))),
                           ],
                         ),
                         CupertinoButton(
@@ -1004,7 +1263,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                               children: [
                                 Icon(CupertinoIcons.checkmark_circle, size: 48, color: CupertinoColors.systemGrey3.resolveFrom(context)),
                                 const SizedBox(height: 8),
-                                Text('Tidak ada Hold Bill aktif.', style: IOSText.footnote.copyWith(color: CupertinoColors.systemGrey)),
+                                Text('Tidak ada Open Bill aktif.', style: IOSText.footnote.copyWith(color: CupertinoColors.systemGrey)),
                               ],
                             ),
                           )
@@ -1060,7 +1319,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                                               onPressed: () {
                                                 _promptCancelHoldBill(bill['id'], setModalState);
                                               },
-                                              child: Text('Batalkan', style: TextStyle(color: CupertinoColors.systemRed.resolveFrom(context), fontSize: 13, fontWeight: FontWeight.bold)),
+                                              child: Text('Batal', style: TextStyle(color: CupertinoColors.systemRed.resolveFrom(context), fontSize: 12, fontWeight: FontWeight.bold)),
                                             ),
                                             const SizedBox(width: 8),
                                             CupertinoButton(
@@ -1070,7 +1329,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                                               onPressed: () {
                                                 _resumeHoldBill(bill, ctx);
                                               },
-                                              child: const Text('Lanjutkan', style: TextStyle(color: CupertinoColors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                                              child: const Text('Close Bill & Bayar', style: TextStyle(color: CupertinoColors.white, fontSize: 12, fontWeight: FontWeight.bold)),
                                             ),
                                           ],
                                         ),
@@ -1129,7 +1388,15 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
         _selectedOrderTypeIdState = (resumedOrder['order_type_id'] as num?)?.toInt() ?? _selectedOrderTypeId;
         _selectedTableNo = resumedOrder['table_id']?.toString();
       });
+      _saveCartDraft();
       HapticFeedback.mediumImpact();
+
+      // Langsung arahkan ke lembar pembayaran (Close Bill -> Langsung Bayar)
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _cart.isNotEmpty) {
+          _openPayment();
+        }
+      });
     } else {
       HapticFeedback.heavyImpact();
       if (mounted) {
@@ -1232,6 +1499,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                           borderRadius: BorderRadius.circular(12),
                           onPressed: () {
                             setState(() => _selectedTableNo = tNo);
+                            _saveCartDraft();
                             if (modalSetState != null) modalSetState(() {});
                             Navigator.pop(ctx);
                           },
@@ -1339,6 +1607,21 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
           CupertinoActionSheetAction(
             onPressed: () {
               Navigator.pop(ctx);
+              _openHoldBillsModal();
+            },
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(CupertinoIcons.tray_full_fill, size: 20, color: IOSColors.warning.resolveFrom(context)),
+                const SizedBox(width: 8),
+                Text('Daftar Open Bill (${PosSyncService.instance.heldOrders.length})',
+                    style: TextStyle(fontWeight: FontWeight.w600, color: IOSColors.warning.resolveFrom(context))),
+              ],
+            ),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(ctx);
               PosShiftSheet.show(context);
             },
             child: const Row(
@@ -1350,6 +1633,24 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
               ],
             ),
           ),
+          if (PosSyncService.instance.hasActiveShift)
+            CupertinoActionSheetAction(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _openShiftPreviewDialog();
+              },
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(CupertinoIcons.chart_bar_alt_fill, size: 20, color: Color(0xFF2563EB)),
+                  SizedBox(width: 8),
+                  Text(
+                    'Preview Transaksi Shift (X-Report)',
+                    style: TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF2563EB)),
+                  ),
+                ],
+              ),
+            ),
           CupertinoActionSheetAction(
             onPressed: () {
               Navigator.pop(ctx);
@@ -1597,10 +1898,10 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
             const SizedBox(width: 6),
 
             if (isTablet) ...[
-              // Hold Bills List Button
+              // Open Bills List Button (Meja Terisi)
               IOSIconButton(
-                icon: CupertinoIcons.pause_circle_fill,
-                semanticLabel: 'Daftar Transaksi Ditahan (Hold Bill)',
+                icon: CupertinoIcons.tray_full_fill,
+                semanticLabel: 'Daftar Transaksi Open Bill (Meja Terisi)',
                 color: syncService.heldOrders.isNotEmpty ? IOSColors.warning.resolveFrom(context) : CupertinoColors.systemGrey,
                 badge: syncService.heldOrders.isNotEmpty ? '${syncService.heldOrders.length}' : null,
                 onPressed: _openHoldBillsModal,
@@ -1622,6 +1923,17 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                 onPressed: () => PosShiftSheet.show(context),
               ),
               const SizedBox(width: 6),
+
+              if (syncService.hasActiveShift) ...[
+                // Quick Preview Transaksi Shift (X-Report)
+                IOSIconButton(
+                  icon: CupertinoIcons.chart_bar_alt_fill,
+                  semanticLabel: 'Preview Transaksi Shift (X-Report)',
+                  color: const Color(0xFF2563EB),
+                  onPressed: _openShiftPreviewDialog,
+                ),
+                const SizedBox(width: 6),
+              ],
 
               // Bluetooth Thermal Printer Status Button (Panda POS / ESC/POS)
               IOSIconButton(
@@ -2427,12 +2739,61 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                     padding: const EdgeInsets.only(right: 8),
                     onPressed: () {
                       HapticFeedback.mediumImpact();
+
+                      // Anti-Fraud Guard: Resumed Open Bill cannot be cleared silently
+                      if (_resumedOrderId != null) {
+                        showCupertinoDialog(
+                          context: context,
+                          builder: (ctx) => CupertinoAlertDialog(
+                            title: const Text('Open Bill Sedang Aktif'),
+                            content: Text(
+                              'Pesanan ini adalah Open Bill Aktif (#$_resumedOrderId) yang tiket dapurnya sudah dicetak.\n\n'
+                              'Untuk melayani meja lain tanpa menghapus pesanan ini, pilih "Simpan ke Open Bill".\n'
+                              'Untuk membatalkan seluruh pesanan, pilih "Batalkan Pesanan (Void)".',
+                            ),
+                            actions: [
+                              CupertinoDialogAction(
+                                onPressed: () => Navigator.pop(ctx),
+                                child: const Text('Kembali'),
+                              ),
+                              CupertinoDialogAction(
+                                isDefaultAction: true,
+                                onPressed: () {
+                                  Navigator.pop(ctx);
+                                  _handleSaveBackToHoldBill(
+                                    dismissCurrentModal: isModalSheet,
+                                    onDone: () {
+                                      if (modalSetState != null) modalSetState(() {});
+                                      if (isModalSheet && onClose != null) onClose();
+                                    },
+                                  );
+                                },
+                                child: const Text('Simpan ke Open Bill'),
+                              ),
+                              CupertinoDialogAction(
+                                isDestructiveAction: true,
+                                onPressed: () {
+                                  Navigator.pop(ctx);
+                                  _promptCancelResumedHoldBill(
+                                    setModalState: modalSetState,
+                                    dismissModal: isModalSheet,
+                                  );
+                                },
+                                child: const Text('Batalkan Pesanan (Void)'),
+                              ),
+                            ],
+                          ),
+                        );
+                        return;
+                      }
+
                       setState(() {
                         _cart.clear();
                         _manualDiscount = 0;
                         _selectedTableNo = null;
                         _resumedOrderId = null;
                       });
+                      _clearCartDraft();
                       if (modalSetState != null) modalSetState(() {});
                       if (isModalSheet && onClose != null) {
                         onClose();
@@ -2460,6 +2821,32 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
               ],
             ),
           ),
+
+          if (_resumedOrderId != null)
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                color: IOSColors.warning.resolveFrom(context).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: IOSColors.warning.resolveFrom(context).withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(CupertinoIcons.tray_full_fill, size: 14, color: IOSColors.warning.resolveFrom(context)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'OPEN BILL AKTIF #$_resumedOrderId${_selectedTableNo != null ? ' (Meja $_selectedTableNo)' : ''} · Belum Bayar',
+                      style: IOSText.caption1.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: IOSColors.warning.resolveFrom(context),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
 
           // Dynamic Animated Order Types Capsule Selector
           _buildOrderTypeSelector(modalSetState: modalSetState),
@@ -2691,17 +3078,25 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                 ),
                 const SizedBox(height: 14),
 
-                // Secondary Actions: Hold & Diskon
+                // Actions: Open Bill / Simpan ke Open Bill & Diskon
                 Row(
                   children: [
                     Expanded(
                       child: IOSButton(
-                        label: 'Hold',
-                        icon: CupertinoIcons.pause,
+                        label: _resumedOrderId != null ? 'Simpan ke Open Bill' : 'Open Bill',
+                        icon: CupertinoIcons.tray_arrow_down,
                         variant: IOSButtonVariant.tinted,
                         size: IOSButtonSize.small,
                         expanded: true,
-                        onPressed: _cart.isEmpty ? null : () => _handleHoldBill(dismissCurrentModal: isModalSheet),
+                        onPressed: _cart.isEmpty
+                            ? null
+                            : () {
+                                if (_resumedOrderId != null) {
+                                  _handleSaveBackToHoldBill(dismissCurrentModal: isModalSheet);
+                                } else {
+                                  _handleHoldBill(dismissCurrentModal: isModalSheet);
+                                }
+                              },
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -2719,10 +3114,10 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                 ),
                 const SizedBox(height: 8),
 
-                // Primary CTA: Bayar & Cetak (Prominent Full Width)
+                // Primary CTA: Close Bill & Bayar OR Bayar & Cetak
                 IOSButton(
-                  label: 'Bayar & Cetak',
-                  icon: CupertinoIcons.printer_fill,
+                  label: _resumedOrderId != null ? 'Close Bill & Bayar' : 'Bayar & Cetak',
+                  icon: _resumedOrderId != null ? CupertinoIcons.checkmark_seal_fill : CupertinoIcons.printer_fill,
                   variant: IOSButtonVariant.filled,
                   size: IOSButtonSize.regular,
                   expanded: true,
@@ -2829,6 +3224,33 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
         },
       ),
     );
+  }
+
+  void _openShiftPreviewDialog() async {
+    HapticFeedback.selectionClick();
+    showCupertinoDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (loadingCtx) => const Center(
+        child: CupertinoActivityIndicator(radius: 16),
+      ),
+    );
+
+    final report = await PosSyncService.instance.fetchCurrentShiftReport();
+
+    if (!mounted) return;
+    Navigator.pop(context); // Close loading indicator
+
+    if (report != null) {
+      PosCloseShiftReportDialog.show(context, report: report, autoPrint: false);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tidak dapat memuat ringkasan transaksi shift.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   void _openReceiptForOrder(Map<String, dynamic> order) {

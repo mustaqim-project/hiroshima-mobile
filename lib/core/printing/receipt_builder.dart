@@ -7,7 +7,7 @@ import 'package:intl/intl.dart';
 class ReceiptBuilder {
   static final _currencyFormat = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
 
-  /// Rangkap 1: Customer Receipt (Full financial details)
+  /// Rangkap 1: Customer Receipt (Struk Resmi Pembayaran LUNAS - Full financial details)
   static String buildCustomerReceipt({
     required String branchName,
     required String branchAddress,
@@ -46,7 +46,7 @@ class ReceiptBuilder {
       buffer.writeln('No. Telp  : $branchPhone');
     }
     buffer.writeln('--------------------------------');
-    buffer.writeln('     *** RANGKAP 1 - CUSTOMER ***    ');
+    buffer.writeln('  *** STRUK PEMBAYARAN LUNAS ***  ');
     if (isDuplicateCopy) {
       buffer.writeln('             [SALINAN]             ');
     }
@@ -129,7 +129,7 @@ class ReceiptBuilder {
     return buffer.toString();
   }
 
-  /// Rangkap 2: Kitchen / Bar Ticket (NO PRICES, NO PAYMENTS)
+  /// Rangkap 2: Kitchen / Bar Ticket (NO PRICES, NO FINANCIAL DATA - ANTI FRAUD ENFORCED)
   static String buildKitchenTicket({
     required String branchName,
     required String orderNo,
@@ -145,9 +145,9 @@ class ReceiptBuilder {
 
     buffer.writeln('================================');
     if (isAdditionalItemsOnly) {
-      buffer.writeln('      *** TIKET TAMBAHAN ***    ');
+      buffer.writeln('   *** TIKET TAMBAHAN - $targetStation ***   ');
     } else {
-      buffer.writeln('    *** RANGKAP 2 - $targetStation ***   ');
+      buffer.writeln('    *** TIKET PESANAN $targetStation ***   ');
     }
     buffer.writeln('================================');
     buffer.writeln('Order : $orderNo');
@@ -171,11 +171,15 @@ class ReceiptBuilder {
       final modifiers = item['modifiers'] as List<dynamic>?;
       if (modifiers != null && modifiers.isNotEmpty) {
         for (final mod in modifiers) {
+          // Zero price leak for kitchen
           buffer.writeln('    + ${mod['name']}');
         }
       }
     }
 
+    buffer.writeln('--------------------------------');
+    buffer.writeln('  * KHUSUS $targetStation - BUKAN STRUK BAYAR *  ');
+    buffer.writeln('  * DILARANG SEBAGAI ALAT TRANSAKSI *  ');
     buffer.writeln('================================');
     buffer.writeln('\n\n\n[CUT]\n');
 
@@ -215,14 +219,21 @@ class ReceiptBuilder {
     buffer.writeln('   $company   ');
     buffer.writeln('   Outlet: $branchName   ');
     buffer.writeln('================================');
-    buffer.writeln('*** LAPORAN TUTUP SHIFT (CLOSE) ***');
+    final isOpen = (shiftInfo['status'] == 'open') || (closedAt == null);
+    buffer.writeln(isOpen ? '*** RINGKASAN SHIFT (X-REPORT) ***' : '*** LAPORAN TUTUP SHIFT (CLOSE) ***');
     buffer.writeln('--------------------------------');
     buffer.writeln('Shift ID   : #$shiftId');
     buffer.writeln('Kasir      : $cashier');
     buffer.writeln('Waktu Buka : ${openedAt != null ? df.format(openedAt) : "-"} WIB');
-    buffer.writeln('Waktu Tutup: ${closedAt != null ? df.format(closedAt) : "-"} WIB');
+    if (isOpen) {
+      buffer.writeln('Status     : SHIFT BERJALAN');
+    } else {
+      buffer.writeln('Waktu Tutup: ${closedAt != null ? df.format(closedAt) : "-"} WIB');
+    }
     buffer.writeln('Waktu Cetak: ${df.format(printedAt)} WIB');
-    buffer.writeln('Tipe Tutup : $closeType');
+    if (!isOpen) {
+      buffer.writeln('Tipe Tutup : $closeType');
+    }
     buffer.writeln('================================');
     buffer.writeln('    REKAP PENJUALAN PER MENU    ');
     buffer.writeln('--------------------------------');

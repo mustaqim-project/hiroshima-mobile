@@ -80,21 +80,30 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
       HapticFeedback.mediumImpact();
       Navigator.pop(context);
     } else {
-      HapticFeedback.heavyImpact();
       final msg = res['message'] as String? ?? 'Gagal membuka shift.';
-      setState(() {
-        _errorMessage = msg;
-        _lastErrorCode = res['error_code'] as String?;
-      });
 
-      // If active shift exists, refresh immediately to switch view to Close Shift
+      // If active shift already exists on server, fetch and restore it immediately
       if (res['error_code'] == 'ACTIVE_SHIFT_EXISTS' || msg.contains('shift aktif')) {
         await PosSyncService.instance.fetchCurrentShift();
-        if (mounted) {
-          setState(() {
-            _cashController.text = '';
-          });
+        if (!mounted) return;
+        if (PosSyncService.instance.hasActiveShift) {
+          // Shift restored seamlessly, close sheet so cashier can immediately transact
+          HapticFeedback.mediumImpact();
+          Navigator.pop(context);
+          return;
         }
+        HapticFeedback.heavyImpact();
+        setState(() {
+          _cashController.text = '';
+          _errorMessage = msg;
+          _lastErrorCode = res['error_code'] as String?;
+        });
+      } else {
+        HapticFeedback.heavyImpact();
+        setState(() {
+          _errorMessage = msg;
+          _lastErrorCode = res['error_code'] as String?;
+        });
       }
     }
   }
@@ -149,6 +158,26 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
     } else {
       setState(() {
         _errorMessage = 'Tidak ditemukan data laporan shift sebelumnya.';
+      });
+    }
+  }
+
+  Future<void> _handlePreviewShiftReport() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    final report = await PosSyncService.instance.fetchCurrentShiftReport();
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    if (report != null) {
+      PosCloseShiftReportDialog.show(context, report: report, autoPrint: false);
+    } else {
+      setState(() {
+        _errorMessage = 'Tidak ditemukan data transaksi untuk shift ini.';
       });
     }
   }
@@ -553,6 +582,16 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
                         'Ekspektasi Kas Laci',
                         _currency.format((shift?['expected_cash'] as num?)?.toInt() ?? (shift?['starting_cash'] as num?)?.toInt() ?? 0),
                         isBold: true,
+                      ),
+                      const SizedBox(height: 12),
+                      IOSButton(
+                        label: 'Preview Transaksi Shift (X-Report)',
+                        icon: CupertinoIcons.chart_bar_alt_fill,
+                        variant: IOSButtonVariant.tinted,
+                        size: IOSButtonSize.small,
+                        expanded: true,
+                        isLoading: _isLoading,
+                        onPressed: _isLoading ? null : _handlePreviewShiftReport,
                       ),
                       Container(
                         height: 0.5,

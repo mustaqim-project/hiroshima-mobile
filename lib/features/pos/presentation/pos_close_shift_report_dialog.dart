@@ -125,6 +125,7 @@ class _PosCloseShiftReportDialogState extends State<PosCloseShiftReportDialog> {
     final diff = (cashRec['cash_difference'] as num?)?.toInt();
 
     final isDark = CupertinoTheme.of(context).brightness == Brightness.dark;
+    final isOpenShift = (shiftInfo['status'] == 'open') || (closedAt == null);
 
     return Container(
       constraints: const BoxConstraints(maxWidth: 580, maxHeight: 780),
@@ -162,23 +163,30 @@ class _PosCloseShiftReportDialogState extends State<PosCloseShiftReportDialog> {
                       Container(
                         padding: const EdgeInsets.all(7),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFDC2626).withValues(alpha: 0.12),
+                          color: (isOpenShift ? const Color(0xFF2563EB) : const Color(0xFFDC2626)).withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Icon(CupertinoIcons.doc_text_fill, color: Color(0xFFDC2626), size: 20),
+                        child: Icon(
+                          isOpenShift ? CupertinoIcons.chart_bar_alt_fill : CupertinoIcons.doc_text_fill,
+                          color: isOpenShift ? const Color(0xFF2563EB) : const Color(0xFFDC2626),
+                          size: 20,
+                        ),
                       ),
                       const SizedBox(width: 10),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Laporan Tutup Shift',
+                            isOpenShift ? 'Preview Transaksi Shift' : 'Laporan Tutup Shift',
                             style: IOSText.title3.copyWith(fontWeight: FontWeight.w700),
                           ),
                           Text(
-                            'Shift #$shiftId • $branchName',
+                            isOpenShift
+                                ? 'Shift #$shiftId • $branchName • (Sedang Berjalan)'
+                                : 'Shift #$shiftId • $branchName • (Telah Ditutup)',
                             style: IOSText.caption1.copyWith(
-                              color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                              color: isOpenShift ? const Color(0xFF2563EB) : CupertinoColors.secondaryLabel.resolveFrom(context),
+                              fontWeight: isOpenShift ? FontWeight.w600 : FontWeight.normal,
                             ),
                           ),
                         ],
@@ -293,13 +301,13 @@ class _PosCloseShiftReportDialogState extends State<PosCloseShiftReportDialog> {
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFFDC2626).withValues(alpha: 0.1),
+                                      color: (isOpenShift ? const Color(0xFF2563EB) : const Color(0xFFDC2626)).withValues(alpha: 0.1),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
-                                    child: const Text(
-                                      'LAPORAN TUTUP SHIFT',
+                                    child: Text(
+                                      isOpenShift ? 'RINGKASAN SHIFT (X-REPORT)' : 'LAPORAN TUTUP SHIFT',
                                       style: TextStyle(
-                                        color: Color(0xFFDC2626),
+                                        color: isOpenShift ? const Color(0xFF2563EB) : const Color(0xFFDC2626),
                                         fontWeight: FontWeight.w800,
                                         fontSize: 11,
                                         letterSpacing: 0.5,
@@ -317,9 +325,13 @@ class _PosCloseShiftReportDialogState extends State<PosCloseShiftReportDialog> {
                             _buildReceiptRow('Shift ID', '#$shiftId', isBold: true),
                             _buildReceiptRow('Kasir Bertugas', cashier),
                             _buildReceiptRow('Waktu Buka', openedAt != null ? '${_dateFormat.format(openedAt)} WIB' : '-'),
-                            _buildReceiptRow('Waktu Tutup', closedAt != null ? '${_dateFormat.format(closedAt)} WIB' : '-'),
-                            _buildReceiptRow('Waktu Cetak', '${_dateFormat.format(printedAt)} WIB'),
-                            _buildReceiptRow('Tipe Penutupan', closeType),
+                            if (isOpenShift)
+                              _buildReceiptRow('Status Shift', 'SEDANG BERJALAN', valueColor: const Color(0xFF2563EB), isBold: true)
+                            else
+                              _buildReceiptRow('Waktu Tutup', closedAt != null ? '${_dateFormat.format(closedAt)} WIB' : '-'),
+                            _buildReceiptRow('Waktu Cetak/Preview', '${_dateFormat.format(printedAt)} WIB'),
+                            if (!isOpenShift)
+                              _buildReceiptRow('Tipe Penutupan', closeType),
                             const SizedBox(height: 10),
                             _buildDashedLine(context),
                             const SizedBox(height: 12),
@@ -569,7 +581,7 @@ class _PosCloseShiftReportDialogState extends State<PosCloseShiftReportDialog> {
                   Expanded(
                     flex: 3,
                     child: IOSButton(
-                      label: 'Cetak Laporan Tutup Shift',
+                      label: isOpenShift ? 'Cetak Preview Shift (X-Report)' : 'Cetak Laporan Tutup Shift',
                       variant: IOSButtonVariant.filled,
                       icon: CupertinoIcons.printer_fill,
                       isLoading: _isPrinting,

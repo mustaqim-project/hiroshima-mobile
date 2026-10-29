@@ -517,6 +517,317 @@ class ThermalPrinterService extends ChangeNotifier {
     }
   }
 
+  /// Print Kitchen Ticket Only (Rangkap 2 Dapur / Bar)
+  /// Used for Open Bill (First Print): Kitchen prepares food immediately without financial prices.
+  Future<PrinterResult> printKitchenTicketOnly({
+    required String branchName,
+    required String orderNo,
+    required String? tableNo,
+    required String orderTypeName,
+    required DateTime transactionTime,
+    required List<Map<String, dynamic>> items,
+    String targetStation = 'DAPUR',
+    bool isAdditional = false,
+  }) async {
+    if (kIsWeb) {
+      return const PrinterResult(success: false, message: 'Pencetakan Bluetooth tidak didukung di web.');
+    }
+
+    if (!_isConnected && _connectedMac != null && _connectedMac!.isNotEmpty) {
+      await connect(_connectedMac!);
+    }
+
+    if (!_isConnected) {
+      return const PrinterResult(
+        success: false,
+        message: 'Printer Bluetooth belum terhubung. Harap sambungkan printer di menu pengaturan.',
+      );
+    }
+
+    try {
+      final profile = await _getProfile();
+      final generator = Generator(_paperSize, profile);
+      final List<int> bytes = [];
+      final timeStr = DateFormat('HH:mm:ss').format(transactionTime);
+
+      bytes.addAll(generator.reset());
+      bytes.addAll(generator.text('================================', styles: const PosStyles(align: PosAlign.center)));
+      if (isAdditional) {
+        bytes.addAll(generator.text('*** TIKET TAMBAHAN - $targetStation ***', styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size1, width: PosTextSize.size1)));
+      } else {
+        bytes.addAll(generator.text('*** TIKET PESANAN $targetStation ***', styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size1, width: PosTextSize.size1)));
+      }
+      bytes.addAll(generator.text('================================', styles: const PosStyles(align: PosAlign.center)));
+
+      bytes.addAll(generator.row([
+        PosColumn(text: 'Order', width: 4),
+        PosColumn(text: ': $orderNo', width: 8, styles: const PosStyles(bold: true)),
+      ]));
+      bytes.addAll(generator.row([
+        PosColumn(text: 'Waktu', width: 4),
+        PosColumn(text: ': $timeStr WIB', width: 8),
+      ]));
+      bytes.addAll(generator.row([
+        PosColumn(text: 'Tipe', width: 4),
+        PosColumn(text: ': $orderTypeName', width: 8, styles: const PosStyles(bold: true)),
+      ]));
+
+      if (tableNo != null && tableNo.isNotEmpty) {
+        bytes.addAll(generator.text('>> MEJA : $tableNo <<', styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size1, width: PosTextSize.size1)));
+      }
+      bytes.addAll(generator.text('--------------------------------', styles: const PosStyles(align: PosAlign.center)));
+
+      for (final item in items) {
+        final name = item['name'] as String;
+        final qty = item['qty'] as int;
+        final variantName = item['variant_name'] as String?;
+        final fullName = (variantName != null && variantName.isNotEmpty) ? '$name ($variantName)' : name;
+
+        // Zero price display for kitchen ticket (anti-fraud protection)
+        bytes.addAll(generator.text('${qty}x  $fullName', styles: const PosStyles(bold: true, height: PosTextSize.size1)));
+
+        final notes = item['notes'] as String?;
+        if (notes != null && notes.isNotEmpty) {
+          bytes.addAll(generator.text('   Catatan: $notes', styles: const PosStyles(bold: true)));
+        }
+
+        final modifiers = (item['modifiers'] as List<dynamic>?) ?? [];
+        for (final m in modifiers) {
+          final mName = m['name'] ?? m['modifier_name'] ?? '';
+          bytes.addAll(generator.text('   + $mName', styles: const PosStyles(fontType: PosFontType.fontB)));
+        }
+        bytes.addAll(generator.feed(1));
+      }
+
+      bytes.addAll(generator.text('--------------------------------', styles: const PosStyles(align: PosAlign.center)));
+      bytes.addAll(generator.text('* KHUSUS $targetStation - BUKAN STRUK BAYAR *', styles: const PosStyles(align: PosAlign.center, bold: true)));
+      bytes.addAll(generator.text('* DILARANG SEBAGAI ALAT TRANSAKSI *', styles: const PosStyles(align: PosAlign.center, fontType: PosFontType.fontB)));
+      bytes.addAll(generator.text('================================', styles: const PosStyles(align: PosAlign.center)));
+      bytes.addAll(generator.feed(3));
+      bytes.addAll(generator.cut());
+
+      final ok = await PrintBluetoothThermal.writeBytes(bytes);
+      if (ok) {
+        return const PrinterResult(
+          success: true,
+          message: 'Tiket Dapur (Rangkap 2) berhasil dicetak ke printer Bluetooth.',
+        );
+      }
+      return const PrinterResult(
+        success: false,
+        message: 'Printer merespon gagal saat mencetak tiket dapur. Periksa kertas printer.',
+      );
+    } catch (e) {
+      return PrinterResult(
+        success: false,
+        message: 'Gagal mencetak tiket dapur: $e',
+        error: e.toString(),
+      );
+    }
+  }
+
+  /// Print Paid Customer Receipt (Rangkap 1 Customer LUNAS)
+  /// Used for Bill Bayar (Second Print): Prints finalized financial receipt and opens cash drawer.
+  Future<PrinterResult> printCustomerReceiptOnly({
+    required String branchName,
+    required String branchAddress,
+    required String branchPhone,
+    required String orderNo,
+    required String? tableNo,
+    required String orderTypeName,
+    required String cashierName,
+    required DateTime transactionTime,
+    required List<Map<String, dynamic>> items,
+    required int subtotal,
+    required int totalDiscount,
+    required int serviceChargeAmount,
+    required int taxAmount,
+    required int roundingAmount,
+    required int totalAmount,
+    required List<Map<String, dynamic>> payments,
+    required int changeAmount,
+    bool openDrawer = false,
+    bool isDuplicateCopy = false,
+  }) async {
+    if (kIsWeb) {
+      return const PrinterResult(success: false, message: 'Pencetakan Bluetooth tidak didukung di web.');
+    }
+
+    if (!_isConnected && _connectedMac != null && _connectedMac!.isNotEmpty) {
+      await connect(_connectedMac!);
+    }
+
+    if (!_isConnected) {
+      return const PrinterResult(
+        success: false,
+        message: 'Printer belum terhubung. Hubungkan printer Bluetooth di menu pengaturan.',
+      );
+    }
+
+    try {
+      final profile = await _getProfile();
+      final generator = Generator(_paperSize, profile);
+      final List<int> bytes = [];
+
+      final currency = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
+      final timeStr = DateFormat('dd/MM/yyyy HH:mm').format(transactionTime);
+
+      if (openDrawer) {
+        bytes.addAll(generator.drawer());
+      }
+
+      bytes.addAll(generator.reset());
+      bytes.addAll(await _generateLandscapeLogoBytes(generator));
+      bytes.addAll(generator.feed(1));
+
+      bytes.addAll(generator.text(
+        branchName.toUpperCase(),
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      ));
+      if (branchAddress.isNotEmpty) {
+        bytes.addAll(generator.text(branchAddress, styles: const PosStyles(align: PosAlign.center)));
+      }
+      if (branchPhone.isNotEmpty) {
+        bytes.addAll(generator.text('Telp: $branchPhone', styles: const PosStyles(align: PosAlign.center)));
+      }
+      bytes.addAll(generator.text('--------------------------------', styles: const PosStyles(align: PosAlign.center)));
+      bytes.addAll(generator.text('*** STRUK PEMBAYARAN LUNAS ***', styles: const PosStyles(align: PosAlign.center, bold: true)));
+      if (isDuplicateCopy) {
+        bytes.addAll(generator.text('[SALINAN PEMBAYARAN]', styles: const PosStyles(align: PosAlign.center, bold: true)));
+      }
+      bytes.addAll(generator.text('--------------------------------', styles: const PosStyles(align: PosAlign.center)));
+
+      bytes.addAll(generator.row([
+        PosColumn(text: 'No. Struk', width: 4),
+        PosColumn(text: ': $orderNo', width: 8, styles: const PosStyles(bold: true)),
+      ]));
+      bytes.addAll(generator.row([
+        PosColumn(text: 'Waktu', width: 4),
+        PosColumn(text: ': $timeStr WIB', width: 8),
+      ]));
+      bytes.addAll(generator.row([
+        PosColumn(text: 'Kasir', width: 4),
+        PosColumn(text: ': $cashierName', width: 8),
+      ]));
+      bytes.addAll(generator.row([
+        PosColumn(text: 'Order Type', width: 4),
+        PosColumn(text: ': $orderTypeName', width: 8, styles: const PosStyles(bold: true)),
+      ]));
+      if (tableNo != null && tableNo.isNotEmpty) {
+        bytes.addAll(generator.row([
+          PosColumn(text: 'Meja', width: 4),
+          PosColumn(text: ': $tableNo', width: 8, styles: const PosStyles(bold: true)),
+        ]));
+      }
+      bytes.addAll(generator.text('--------------------------------', styles: const PosStyles(align: PosAlign.center)));
+
+      for (final item in items) {
+        final name = item['name'] as String;
+        final qty = item['qty'] as int;
+        final price = item['price'] as int;
+        final itemSubtotal = qty * price;
+
+        final variantName = item['variant_name'] as String?;
+        final fullName = (variantName != null && variantName.isNotEmpty) ? '$name ($variantName)' : name;
+
+        bytes.addAll(generator.text(fullName, styles: const PosStyles(bold: true)));
+        bytes.addAll(generator.row([
+          PosColumn(text: '  ${qty}x ${currency.format(price)}', width: 7),
+          PosColumn(text: currency.format(itemSubtotal), width: 5, styles: const PosStyles(align: PosAlign.right)),
+        ]));
+
+        final modifiers = (item['modifiers'] as List<dynamic>?) ?? [];
+        for (final m in modifiers) {
+          final mName = m['name'] ?? m['modifier_name'] ?? '';
+          final mPrice = (m['price'] ?? m['unit_price'] ?? 0) as int;
+          final priceStr = mPrice > 0 ? currency.format(mPrice) : 'Gratis';
+          bytes.addAll(generator.text('   + $mName ($priceStr)', styles: const PosStyles(fontType: PosFontType.fontB)));
+        }
+      }
+
+      bytes.addAll(generator.text('--------------------------------', styles: const PosStyles(align: PosAlign.center)));
+      bytes.addAll(generator.row([
+        PosColumn(text: 'Subtotal', width: 6),
+        PosColumn(text: currency.format(subtotal), width: 6, styles: const PosStyles(align: PosAlign.right)),
+      ]));
+
+      if (totalDiscount > 0) {
+        bytes.addAll(generator.row([
+          PosColumn(text: 'Diskon', width: 6),
+          PosColumn(text: '-${currency.format(totalDiscount)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
+        ]));
+      }
+
+      if (serviceChargeAmount > 0) {
+        bytes.addAll(generator.row([
+          PosColumn(text: 'Service', width: 6),
+          PosColumn(text: currency.format(serviceChargeAmount), width: 6, styles: const PosStyles(align: PosAlign.right)),
+        ]));
+      }
+
+      bytes.addAll(generator.row([
+        PosColumn(text: 'Pajak (PB1)', width: 6),
+        PosColumn(text: currency.format(taxAmount), width: 6, styles: const PosStyles(align: PosAlign.right)),
+      ]));
+
+      if (roundingAmount != 0) {
+        final sign = roundingAmount > 0 ? '+' : '-';
+        bytes.addAll(generator.row([
+          PosColumn(text: 'Pembulatan', width: 6),
+          PosColumn(text: '$sign${currency.format(roundingAmount.abs())}', width: 6, styles: const PosStyles(align: PosAlign.right)),
+        ]));
+      }
+
+      bytes.addAll(generator.text('================================', styles: const PosStyles(align: PosAlign.center)));
+      bytes.addAll(generator.row([
+        PosColumn(text: 'TOTAL BAYAR', width: 6, styles: const PosStyles(bold: true)),
+        PosColumn(text: currency.format(totalAmount), width: 6, styles: const PosStyles(align: PosAlign.right, bold: true)),
+      ]));
+      bytes.addAll(generator.text('================================', styles: const PosStyles(align: PosAlign.center)));
+
+      for (final p in payments) {
+        final method = p['method'] as String? ?? 'Pembayaran';
+        final amount = (p['amount'] as num?)?.toInt() ?? totalAmount;
+        bytes.addAll(generator.row([
+          PosColumn(text: method, width: 6),
+          PosColumn(text: currency.format(amount), width: 6, styles: const PosStyles(align: PosAlign.right)),
+        ]));
+      }
+
+      if (changeAmount > 0) {
+        bytes.addAll(generator.row([
+          PosColumn(text: 'Kembalian', width: 6),
+          PosColumn(text: currency.format(changeAmount), width: 6, styles: const PosStyles(align: PosAlign.right)),
+        ]));
+      }
+
+      bytes.addAll(generator.feed(1));
+      bytes.addAll(generator.text('Terima kasih atas kunjungan Anda', styles: const PosStyles(align: PosAlign.center)));
+      bytes.addAll(generator.text('Selamat menikmati hidangan kami!', styles: const PosStyles(align: PosAlign.center)));
+      bytes.addAll(generator.text('Instagram: @hiroshima.id', styles: const PosStyles(align: PosAlign.center, fontType: PosFontType.fontB)));
+      bytes.addAll(generator.feed(3));
+      bytes.addAll(generator.cut());
+
+      final ok = await PrintBluetoothThermal.writeBytes(bytes);
+      if (ok) {
+        return const PrinterResult(
+          success: true,
+          message: 'Struk Customer (Lunas) berhasil dicetak ke printer Bluetooth.',
+        );
+      }
+      return const PrinterResult(
+        success: false,
+        message: 'Printer merespon gagal saat mencetak struk. Periksa kertas printer.',
+      );
+    } catch (e) {
+      return PrinterResult(
+        success: false,
+        message: 'Gagal mencetak struk customer: $e',
+        error: e.toString(),
+      );
+    }
+  }
+
   /// Test Print to verify Bluetooth printer connection (Panda POS / ESC/POS)
   Future<PrinterResult> printTest() async {
     if (kIsWeb) {
@@ -624,7 +935,11 @@ class ThermalPrinterService extends ChangeNotifier {
       ));
       bytes.addAll(generator.text('Outlet: $branchName', styles: const PosStyles(align: PosAlign.center)));
       bytes.addAll(generator.text('================================', styles: const PosStyles(align: PosAlign.center)));
-      bytes.addAll(generator.text('*** LAPORAN TUTUP SHIFT ***', styles: const PosStyles(align: PosAlign.center, bold: true)));
+      final isOpen = (shiftInfo['status'] == 'open') || (closedAt == null);
+      bytes.addAll(generator.text(
+        isOpen ? '*** RINGKASAN SHIFT (X-REPORT) ***' : '*** LAPORAN TUTUP SHIFT ***',
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      ));
       bytes.addAll(generator.text('--------------------------------', styles: const PosStyles(align: PosAlign.center)));
 
       bytes.addAll(generator.row([
@@ -639,10 +954,17 @@ class ThermalPrinterService extends ChangeNotifier {
         PosColumn(text: 'Waktu Buka', width: 4),
         PosColumn(text: ': ${openedAt != null ? df.format(openedAt) : "-"}', width: 8),
       ]));
-      bytes.addAll(generator.row([
-        PosColumn(text: 'Waktu Tutup', width: 4),
-        PosColumn(text: ': ${closedAt != null ? df.format(closedAt) : "-"}', width: 8),
-      ]));
+      if (isOpen) {
+        bytes.addAll(generator.row([
+          PosColumn(text: 'Status', width: 4),
+          PosColumn(text: ': SHIFT BERJALAN', width: 8, styles: const PosStyles(bold: true)),
+        ]));
+      } else {
+        bytes.addAll(generator.row([
+          PosColumn(text: 'Waktu Tutup', width: 4),
+          PosColumn(text: ': ${closedAt != null ? df.format(closedAt) : "-"}', width: 8),
+        ]));
+      }
       bytes.addAll(generator.row([
         PosColumn(text: 'Waktu Cetak', width: 4),
         PosColumn(text: ': ${df.format(printedAt)}', width: 8),

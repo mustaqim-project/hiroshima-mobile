@@ -24,6 +24,7 @@ class PosPaymentSheet extends StatefulWidget {
     required this.tableNo,
     required this.onPaymentSuccess,
     this.resumedOrderId,
+    this.isLocked = false,
   });
 
   final List<Map<String, dynamic>> cart;
@@ -33,6 +34,7 @@ class PosPaymentSheet extends StatefulWidget {
   final String? tableNo;
   final VoidCallback onPaymentSuccess;
   final int? resumedOrderId;
+  final bool isLocked;
 
   static Future<void> show({
     required BuildContext context,
@@ -43,10 +45,12 @@ class PosPaymentSheet extends StatefulWidget {
     required String? tableNo,
     required VoidCallback onPaymentSuccess,
     int? resumedOrderId,
+    bool isLocked = false,
   }) {
     return showCupertinoModalPopup<void>(
       context: context,
       barrierDismissible: true,
+      barrierColor: CupertinoColors.black.withValues(alpha: 0.5),
       builder: (ctx) => PosPaymentSheet(
         cart: cart,
         calculation: calculation,
@@ -55,6 +59,7 @@ class PosPaymentSheet extends StatefulWidget {
         tableNo: tableNo,
         onPaymentSuccess: onPaymentSuccess,
         resumedOrderId: resumedOrderId,
+        isLocked: isLocked,
       ),
     );
   }
@@ -188,38 +193,74 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
     // 1. Submit to local outbox & sync backend
     await PosSyncService.instance.submitOrder(orderPayload);
 
-    // 2. Bluetooth Thermal Print (Dual Copy: Rangkap 1 & Rangkap 2)
+    // 2. Bluetooth Thermal Print
     String printNotice = '';
     if (ThermalPrinterService.instance.autoPrintOnCheckout) {
-      final printRes = await ThermalPrinterService.instance.printOrderDualCopy(
-        branchName: branchName,
-        branchAddress: branchAddress,
-        branchPhone: branchPhone,
-        orderNo: orderNo,
-        tableNo: widget.tableNo,
-        orderTypeName: widget.orderType,
-        cashierName: cashierName,
-        transactionTime: transactionTime,
-        items: widget.cart,
-        subtotal: calc.subtotal,
-        totalDiscount: calc.totalDiscount,
-        serviceChargeAmount: calc.serviceChargeAmount,
-        taxAmount: calc.taxAmount,
-        roundingAmount: calc.roundingAmount,
-        totalAmount: calc.totalAmount,
-        payments: [
-          {
-            'method': _selectedPaymentMethod['name'] ?? 'Tunai',
-            'amount': _isCash ? _cashGiven : calc.totalAmount,
-          }
-        ],
-        changeAmount: _changeAmount > 0 ? _changeAmount : 0,
-        openDrawer: _isCash,
-      );
+      if (widget.resumedOrderId != null) {
+        // Alur Open Bill -> Close Bill -> Bill Bayar:
+        // Tiket Dapur (Rangkap 2) SUDAH dicetak saat Open Bill pertama kali.
+        // Saat bayar lunas, HANYA cetak Struk Customer LUNAS (Rangkap 1) & buka laci kasir jika tunai.
+        final printRes = await ThermalPrinterService.instance.printCustomerReceiptOnly(
+          branchName: branchName,
+          branchAddress: branchAddress,
+          branchPhone: branchPhone,
+          orderNo: orderNo,
+          tableNo: widget.tableNo,
+          orderTypeName: widget.orderType,
+          cashierName: cashierName,
+          transactionTime: transactionTime,
+          items: widget.cart,
+          subtotal: calc.subtotal,
+          totalDiscount: calc.totalDiscount,
+          serviceChargeAmount: calc.serviceChargeAmount,
+          taxAmount: calc.taxAmount,
+          roundingAmount: calc.roundingAmount,
+          totalAmount: calc.totalAmount,
+          payments: [
+            {
+              'method': _selectedPaymentMethod['name'] ?? 'Tunai',
+              'amount': _isCash ? _cashGiven : calc.totalAmount,
+            }
+          ],
+          changeAmount: _changeAmount > 0 ? _changeAmount : 0,
+          openDrawer: _isCash,
+        );
 
-      printNotice = printRes.success
-          ? 'Struk Rangkap 1 & Rangkap 2 berhasil dicetak ke printer Bluetooth.'
-          : printRes.message;
+        printNotice = printRes.success
+            ? 'Struk Pembayaran Customer (Lunas) berhasil dicetak ke printer Bluetooth.'
+            : printRes.message;
+      } else {
+        // Alur Quick Serve (Langsung Bayar tanpa Open Bill): Cetak Dual Copy (Customer + Dapur)
+        final printRes = await ThermalPrinterService.instance.printOrderDualCopy(
+          branchName: branchName,
+          branchAddress: branchAddress,
+          branchPhone: branchPhone,
+          orderNo: orderNo,
+          tableNo: widget.tableNo,
+          orderTypeName: widget.orderType,
+          cashierName: cashierName,
+          transactionTime: transactionTime,
+          items: widget.cart,
+          subtotal: calc.subtotal,
+          totalDiscount: calc.totalDiscount,
+          serviceChargeAmount: calc.serviceChargeAmount,
+          taxAmount: calc.taxAmount,
+          roundingAmount: calc.roundingAmount,
+          totalAmount: calc.totalAmount,
+          payments: [
+            {
+              'method': _selectedPaymentMethod['name'] ?? 'Tunai',
+              'amount': _isCash ? _cashGiven : calc.totalAmount,
+            }
+          ],
+          changeAmount: _changeAmount > 0 ? _changeAmount : 0,
+          openDrawer: _isCash,
+        );
+
+        printNotice = printRes.success
+            ? 'Struk Rangkap 1 & Rangkap 2 berhasil dicetak ke printer Bluetooth.'
+            : printRes.message;
+      }
     }
 
     if (!mounted) return;
@@ -271,31 +312,60 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
           return false;
         },
         onReprint: () async {
-          await ThermalPrinterService.instance.printOrderDualCopy(
-            branchName: branchName,
-            branchAddress: branchAddress,
-            branchPhone: branchPhone,
-            orderNo: orderNo,
-            tableNo: widget.tableNo,
-            orderTypeName: widget.orderType,
-            cashierName: cashierName,
-            transactionTime: transactionTime,
-            items: widget.cart,
-            subtotal: calc.subtotal,
-            totalDiscount: calc.totalDiscount,
-            serviceChargeAmount: calc.serviceChargeAmount,
-            taxAmount: calc.taxAmount,
-            roundingAmount: calc.roundingAmount,
-            totalAmount: calc.totalAmount,
-            payments: [
-              {
-                'method': _selectedPaymentMethod['name'] ?? 'Tunai',
-                'amount': _isCash ? _cashGiven : calc.totalAmount,
-              }
-            ],
-            changeAmount: _changeAmount > 0 ? _changeAmount : 0,
-            openDrawer: _isCash,
-          );
+          if (widget.resumedOrderId != null) {
+            await ThermalPrinterService.instance.printCustomerReceiptOnly(
+              branchName: branchName,
+              branchAddress: branchAddress,
+              branchPhone: branchPhone,
+              orderNo: orderNo,
+              tableNo: widget.tableNo,
+              orderTypeName: widget.orderType,
+              cashierName: cashierName,
+              transactionTime: transactionTime,
+              items: widget.cart,
+              subtotal: calc.subtotal,
+              totalDiscount: calc.totalDiscount,
+              serviceChargeAmount: calc.serviceChargeAmount,
+              taxAmount: calc.taxAmount,
+              roundingAmount: calc.roundingAmount,
+              totalAmount: calc.totalAmount,
+              payments: [
+                {
+                  'method': _selectedPaymentMethod['name'] ?? 'Tunai',
+                  'amount': _isCash ? _cashGiven : calc.totalAmount,
+                }
+              ],
+              changeAmount: _changeAmount > 0 ? _changeAmount : 0,
+              openDrawer: false,
+              isDuplicateCopy: true,
+            );
+          } else {
+            await ThermalPrinterService.instance.printOrderDualCopy(
+              branchName: branchName,
+              branchAddress: branchAddress,
+              branchPhone: branchPhone,
+              orderNo: orderNo,
+              tableNo: widget.tableNo,
+              orderTypeName: widget.orderType,
+              cashierName: cashierName,
+              transactionTime: transactionTime,
+              items: widget.cart,
+              subtotal: calc.subtotal,
+              totalDiscount: calc.totalDiscount,
+              serviceChargeAmount: calc.serviceChargeAmount,
+              taxAmount: calc.taxAmount,
+              roundingAmount: calc.roundingAmount,
+              totalAmount: calc.totalAmount,
+              payments: [
+                {
+                  'method': _selectedPaymentMethod['name'] ?? 'Tunai',
+                  'amount': _isCash ? _cashGiven : calc.totalAmount,
+                }
+              ],
+              changeAmount: _changeAmount > 0 ? _changeAmount : 0,
+              openDrawer: false,
+            );
+          }
         },
         onClose: () => Navigator.pop(ctx),
       ),
@@ -307,78 +377,80 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
     final calc = widget.calculation;
     final paymentMethods = PosSyncService.instance.paymentMethods;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: IOSColors.groupedBackground.resolveFrom(context),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.sizeOf(context).height * 0.90,
-        maxWidth: 580,
-      ),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Grabber handle
-            Center(
-              child: Container(
-                margin: const EdgeInsets.only(top: 10, bottom: 6),
-                width: 36,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: CupertinoColors.systemGrey3.resolveFrom(context),
-                  borderRadius: BorderRadius.circular(2.5),
+    return PopScope(
+      canPop: true,
+      child: Container(
+        decoration: BoxDecoration(
+          color: IOSColors.groupedBackground.resolveFrom(context),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.90,
+          maxWidth: 580,
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Grabber handle
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.only(top: 10, bottom: 6),
+                  width: 36,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: CupertinoColors.systemGrey3.resolveFrom(context),
+                    borderRadius: BorderRadius.circular(2.5),
+                  ),
                 ),
               ),
-            ),
 
-            // Header
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                children: [
-                  Icon(CupertinoIcons.creditcard_fill, size: 24, color: IOSColors.accent.resolveFrom(context)),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Penyelesaian Pembayaran', style: IOSText.headline.copyWith(color: IOSColors.label.resolveFrom(context))),
-                        Text(
-                          '${widget.orderType}${widget.tableNo != null ? " • Meja ${widget.tableNo}" : ""}',
-                          style: IOSText.footnote.copyWith(
-                            color: IOSColors.secondaryLabel.resolveFrom(context),
+              // Header
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  children: [
+                    Icon(CupertinoIcons.creditcard_fill, size: 24, color: IOSColors.accent.resolveFrom(context)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Penyelesaian Pembayaran', style: IOSText.headline.copyWith(color: IOSColors.label.resolveFrom(context))),
+                          Text(
+                            '${widget.orderType}${widget.tableNo != null ? " • Meja ${widget.tableNo}" : ""}',
+                            style: IOSText.footnote.copyWith(
+                              color: IOSColors.secondaryLabel.resolveFrom(context),
+                            ),
                           ),
+                        ],
+                      ),
+                    ),
+                    CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      onPressed: () => Navigator.pop(context),
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: IOSColors.systemFill.resolveFrom(context),
+                          shape: BoxShape.circle,
                         ),
-                      ],
-                    ),
-                  ),
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    onPressed: () => Navigator.pop(context),
-                    child: Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: IOSColors.systemFill.resolveFrom(context),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        CupertinoIcons.xmark,
-                        size: 16,
-                        color: IOSColors.secondaryLabel.resolveFrom(context),
+                        child: Icon(
+                          CupertinoIcons.xmark,
+                          size: 16,
+                          color: IOSColors.secondaryLabel.resolveFrom(context),
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            Container(
-              height: 0.5,
-              color: IOSColors.separator.resolveFrom(context).withValues(alpha: 0.4),
-            ),
+              Container(
+                height: 0.5,
+                color: IOSColors.separator.resolveFrom(context).withValues(alpha: 0.4),
+              ),
 
             Flexible(
               child: SingleChildScrollView(
@@ -636,18 +708,24 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
                   ),
                 ),
               ),
-              child: IOSButton(
-                label: 'Konfirmasi Bayar & Cetak Struk',
-                icon: CupertinoIcons.printer_fill,
-                variant: IOSButtonVariant.filled,
-                isLoading: _isProcessing,
-                expanded: true,
-                onPressed: _canSubmit && !_isProcessing ? _handleProcessPayment : null,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IOSButton(
+                    label: 'Konfirmasi Bayar & Cetak Struk',
+                    icon: CupertinoIcons.printer_fill,
+                    variant: IOSButtonVariant.filled,
+                    isLoading: _isProcessing,
+                    expanded: true,
+                    onPressed: _canSubmit && !_isProcessing ? _handleProcessPayment : null,
+                  ),
+                ],
               ),
             ),
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

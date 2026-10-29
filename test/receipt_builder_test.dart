@@ -36,7 +36,7 @@ void main() {
       expect(receipt, contains('Cabang    : Hiroshima Pusat'));
       expect(receipt, contains('No. Struk : HRS01-POS-001'));
       expect(receipt, contains('Tipe      : Dine In'));
-      expect(receipt, contains('RANGKAP 1 - CUSTOMER'));
+      expect(receipt, contains('*** STRUK PEMBAYARAN LUNAS ***'));
       expect(receipt, contains('TOTAL BAYAR'));
       expect(receipt, contains('Pajak (PB1)'));
       expect(receipt, contains('Tunai'));
@@ -44,6 +44,28 @@ void main() {
       expect(receipt, contains('Meja 05'));
       expect(receipt, contains('Terima kasih atas kunjungan Anda'));
       expect(receipt, contains('@hiroshima.id'));
+    });
+
+    test('Anti-Fraud: Kitchen ticket contains zero prices and strict non-transaction disclaimer', () {
+      final kitchenTicket = ReceiptBuilder.buildKitchenTicket(
+        branchName: 'Hiroshima Pusat',
+        orderNo: 'HRS01-POS-001',
+        tableNo: 'Meja 05',
+        orderTypeName: 'Dine In',
+        transactionTime: DateTime.parse('2026-10-23 12:30:00'),
+        items: sampleItems,
+        targetStation: 'DAPUR',
+      );
+
+      expect(kitchenTicket, contains('*** TIKET PESANAN DAPUR ***'));
+      expect(kitchenTicket, contains('* KHUSUS DAPUR - BUKAN STRUK BAYAR *'));
+      expect(kitchenTicket, contains('* DILARANG SEBAGAI ALAT TRANSAKSI *'));
+      expect(kitchenTicket, isNot(contains('Rp ')));
+      expect(kitchenTicket, isNot(contains('Subtotal')));
+      expect(kitchenTicket, isNot(contains('TOTAL')));
+      expect(kitchenTicket, isNot(contains('Pajak')));
+      expect(kitchenTicket, isNot(contains('Tunai')));
+      expect(kitchenTicket, isNot(contains('Kembalian')));
     });
 
     test('Rangkap 2 (Dapur) omits all prices and payment information', () {
@@ -57,7 +79,7 @@ void main() {
         targetStation: 'DAPUR',
       );
 
-      expect(kitchenTicket, contains('RANGKAP 2 - DAPUR'));
+      expect(kitchenTicket, contains('*** TIKET PESANAN DAPUR ***'));
       expect(kitchenTicket, contains('2x  Ramen Spesial'));
       expect(kitchenTicket, contains('Catatan: Kurangi cabai'));
       expect(kitchenTicket, contains('MEJA  : >> Meja 05 <<'));

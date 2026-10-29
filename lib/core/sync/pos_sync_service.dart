@@ -30,6 +30,8 @@ class PosSyncService extends ChangeNotifier {
   static const String _prefKeyCanSwitchBranch = 'hiroshima_pos_can_switch_branch';
   static const String _prefKeyCatalogCache = 'hiroshima_pos_catalog_cache_v2';
   static const String _prefKeyRecentOrdersCache = 'hiroshima_pos_recent_orders_cache_v1';
+  static const String _prefKeyHeldOrdersCache = 'hiroshima_pos_held_orders_cache_v1';
+  static const String _prefKeyCurrentShift = 'hiroshima_pos_current_shift_cache_v1';
 
   /// Official production API base URL on hiroshima.web.id
   static const String productionBaseUrl = 'https://hiroshima.web.id/api/v1';
@@ -139,6 +141,7 @@ class PosSyncService extends ChangeNotifier {
     _cashiers = [];
     _systemSettings = {};
     _heldOrders = [];
+    _currentShift = null;
     currentUser = null;
     authToken = '';
   }
@@ -165,11 +168,16 @@ class PosSyncService extends ChangeNotifier {
   File get _cacheFile => File('offline_catalog_cache.json');
   File get _outboxFile => File('offline_outbox_queue.json');
 
+  /// Reload all cached data from disk (auth, outbox, catalog, and held orders)
+  Future<void> reloadFromDisk() => _initAutoSync();
+
   Future<void> _initAutoSync() async {
     await _loadSavedBaseUrl();
     await _loadSavedAuth();
     _loadOutboxFromDisk();
-    _loadCacheFromDisk();
+    await _loadCacheFromDisk();
+    await _loadHeldOrdersFromDisk();
+    await _loadCurrentShiftFromDisk();
   }
 
   Future<void> _loadSavedAuth() async {
@@ -259,8 +267,9 @@ class PosSyncService extends ChangeNotifier {
         }
 
         notifyListeners();
-        // Fetch latest catalog on login for assigned branch
+        // Fetch latest catalog and active shift on login for assigned branch
         unawaited(fetchCatalog(branchId: _branch['id']));
+        unawaited(fetchCurrentShift());
 
         return {
           'success': true,
@@ -349,6 +358,7 @@ class PosSyncService extends ChangeNotifier {
       await prefs.setString(_prefKeyActiveBranch, jsonEncode(newBranch));
     } catch (_) {}
     _currentShift = null;
+    await _clearCurrentShiftFromDisk();
     notifyListeners();
     await fetchCurrentShift();
     return await fetchCatalog(branchId: newBranch['id']);
@@ -372,6 +382,7 @@ class PosSyncService extends ChangeNotifier {
     _accessibleBranches = [];
     _canSwitchBranch = false;
     _branch = {};
+    _currentShift = null;
 
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -380,6 +391,7 @@ class PosSyncService extends ChangeNotifier {
       await prefs.remove(_prefKeyActiveBranch);
       await prefs.remove(_prefKeyAccessibleBranches);
       await prefs.remove(_prefKeyCanSwitchBranch);
+      await prefs.remove(_prefKeyCurrentShift);
     } catch (_) {}
 
     notifyListeners();
@@ -389,6 +401,42 @@ class PosSyncService extends ChangeNotifier {
   Map<String, dynamic>? _currentShift;
   Map<String, dynamic>? get currentShift => _currentShift;
   bool get hasActiveShift => _currentShift != null && _currentShift!['status'] == 'open';
+
+  Future<void> _saveCurrentShiftToDisk(Map<String, dynamic>? shift) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (shift != null) {
+        await prefs.setString(_prefKeyCurrentShift, jsonEncode(shift));
+      } else {
+        await prefs.remove(_prefKeyCurrentShift);
+      }
+    } catch (e) {
+      debugPrint('[PosSyncService] Error saving current shift to disk: $e');
+    }
+  }
+
+  Future<void> _loadCurrentShiftFromDisk() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final shiftStr = prefs.getString(_prefKeyCurrentShift);
+      if (shiftStr != null && shiftStr.isNotEmpty) {
+        final decoded = jsonDecode(shiftStr) as Map<String, dynamic>;
+        if (decoded['status'] == 'open') {
+          _currentShift = decoded;
+          notifyListeners();
+        }
+      }
+    } catch (e) {
+      debugPrint('[PosSyncService] Error loading current shift from disk: $e');
+    }
+  }
+
+  Future<void> _clearCurrentShiftFromDisk() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_prefKeyCurrentShift);
+    } catch (_) {}
+  }
 
   Future<Map<String, dynamic>> fetchCurrentShift() async {
     try {
@@ -409,27 +457,38 @@ class PosSyncService extends ChangeNotifier {
       final response = await http.get(
         uri,
         headers: headers,
-      ).timeout(const Duration(seconds: 4));
+      ).timeout(const Duration(seconds: 10));
 
       final body = jsonDecode(response.body) as Map<String, dynamic>;
       if (response.statusCode == 200 && body['success'] == true) {
         if (body['has_active_shift'] == true) {
           _currentShift = body['shift'] as Map<String, dynamic>?;
+          await _saveCurrentShiftToDisk(_currentShift);
         } else {
-          _currentShift = null;
+          // Hanya hapus shift jika bukan offline shift lokal yang belum tersinkron
+          final isOfflineShift = _currentShift?['offline'] == true ||
+              _currentShift?['is_offline_shift'] == true;
+          if (!isOfflineShift) {
+            _currentShift = null;
+            await _clearCurrentShiftFromDisk();
+          }
         }
         notifyListeners();
         return {'success': true, 'shift': _currentShift};
       }
       if (response.statusCode == 410) {
         _currentShift = null;
+        await _clearCurrentShiftFromDisk();
         notifyListeners();
         return {'success': true, 'shift': null, 'message': body['message']};
       }
-      return {'success': false, 'message': body['message'] ?? 'Gagal mengambil data shift'};
+      return {'success': false, 'message': body['message'] ?? 'Gagal mengambil data shift', 'shift': _currentShift};
     } catch (e) {
-      // In offline mode, keep locally mocked or active shift
-      return {'success': false, 'message': 'Mode Offline: $e'};
+      // In offline mode or timeout, ensure fallback to cached shift on disk
+      if (_currentShift == null) {
+        await _loadCurrentShiftFromDisk();
+      }
+      return {'success': false, 'message': 'Mode Offline: $e', 'shift': _currentShift};
     }
   }
 
@@ -456,21 +515,26 @@ class PosSyncService extends ChangeNotifier {
         uri,
         headers: headers,
         body: jsonEncode(payload),
-      ).timeout(const Duration(seconds: 5));
+      ).timeout(const Duration(seconds: 8));
 
       final body = jsonDecode(response.body) as Map<String, dynamic>;
       if (response.statusCode == 201 && body['success'] == true) {
         _currentShift = body['shift'] as Map<String, dynamic>?;
+        await _saveCurrentShiftToDisk(_currentShift);
         notifyListeners();
         return {'success': true, 'shift': _currentShift};
       }
       if (response.statusCode == 409) {
         // Shift already exists! Fetch current shift to update app state immediately
         await fetchCurrentShift();
+        final restored = _currentShift != null;
         return {
-          'success': false,
+          'success': restored,
+          'restored': restored,
           'error_code': 'ACTIVE_SHIFT_EXISTS',
-          'message': body['message'] ?? 'Kasir masih memiliki shift aktif yang belum ditutup.',
+          'message': restored
+              ? 'Shift aktif kasir berhasil dipulihkan dari server.'
+              : (body['message'] ?? 'Kasir masih memiliki shift aktif yang belum ditutup.'),
           'shift': _currentShift,
         };
       }
@@ -484,7 +548,10 @@ class PosSyncService extends ChangeNotifier {
         'expected_cash': startingCash,
         'opened_at': DateTime.now().toIso8601String(),
         'status': 'open',
+        'offline': true,
+        'is_offline_shift': true,
       };
+      await _saveCurrentShiftToDisk(_currentShift);
       notifyListeners();
       return {'success': true, 'offline': true, 'shift': _currentShift};
     }
@@ -515,13 +582,14 @@ class PosSyncService extends ChangeNotifier {
         uri,
         headers: headers,
         body: jsonEncode(payload),
-      ).timeout(const Duration(seconds: 5));
+      ).timeout(const Duration(seconds: 8));
 
       final body = jsonDecode(response.body) as Map<String, dynamic>;
       if (response.statusCode == 200 && body['success'] == true) {
         final closed = body['shift'] as Map<String, dynamic>?;
         final report = body['report'] as Map<String, dynamic>?;
         _currentShift = null;
+        await _clearCurrentShiftFromDisk();
         notifyListeners();
         return {'success': true, 'shift': closed, 'report': report};
       }
@@ -535,6 +603,7 @@ class PosSyncService extends ChangeNotifier {
     } catch (e) {
       final old = _currentShift;
       _currentShift = null;
+      await _clearCurrentShiftFromDisk();
       notifyListeners();
       return {
         'success': true,
@@ -549,12 +618,94 @@ class PosSyncService extends ChangeNotifier {
     }
   }
 
-  /// Generate structured report map for offline shift closures
-  Map<String, dynamic> generateLocalReport(Map<String, dynamic>? shiftData, int actualCash) {
+  /// Generate structured report map for offline shift closures or preview
+  Map<String, dynamic> generateLocalReport(Map<String, dynamic>? shiftData, int actualCash, {bool isOpenShift = false}) {
     final startCash = (shiftData?['starting_cash'] as num?)?.toInt() ?? 0;
-    final expCash = (shiftData?['expected_cash'] as num?)?.toInt() ?? startCash;
-    final diff = actualCash - expCash;
     final user = currentUser;
+
+    final shiftOpenedTime = DateTime.tryParse(shiftData?['opened_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+    final shiftId = shiftData?['id'];
+
+    // Filter local completed orders belonging to this shift
+    final completedOrders = _localRecentOrders.where((o) {
+      if (o['status'] != null && o['status'].toString().toLowerCase() != 'completed') return false;
+      if (o['shift_id'] != null && shiftId != null) {
+        return o['shift_id'].toString() == shiftId.toString();
+      }
+      final oTime = DateTime.tryParse(o['client_created_at']?.toString() ?? o['created_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return oTime.isAfter(shiftOpenedTime) || oTime.isAtSameMomentAs(shiftOpenedTime);
+    }).toList();
+
+    int grossSales = 0;
+    int netSales = 0;
+    int taxAmount = 0;
+    int serviceChargeAmount = 0;
+    int roundingAmount = 0;
+    int totalDiscount = 0;
+    int totalCashFromSales = 0;
+
+    final Map<String, Map<String, dynamic>> menuMap = {};
+    final Map<String, int> paymentMap = {};
+
+    for (final order in completedOrders) {
+      final sub = (order['subtotal'] as num?)?.toInt() ?? (order['total_amount'] as num?)?.toInt() ?? 0;
+      final tot = (order['total_amount'] as num?)?.toInt() ?? 0;
+      final disc = (order['total_discount'] as num?)?.toInt() ?? (order['manual_discount_amount'] as num?)?.toInt() ?? 0;
+      final tax = (order['tax_amount'] as num?)?.toInt() ?? 0;
+      final srv = (order['service_charge_amount'] as num?)?.toInt() ?? 0;
+      final rnd = (order['rounding_amount'] as num?)?.toInt() ?? 0;
+
+      grossSales += sub;
+      netSales += tot;
+      totalDiscount += disc;
+      taxAmount += tax;
+      serviceChargeAmount += srv;
+      roundingAmount += rnd;
+
+      // Menu breakdown
+      final items = (order['items'] as List<dynamic>?) ?? [];
+      for (final it in items) {
+        final name = (it['product_name'] ?? it['name'] ?? 'Item').toString();
+        final qty = (it['quantity'] ?? it['qty'] ?? 1) as int;
+        final price = (it['unit_price'] ?? it['price'] ?? 0) as int;
+        final itemTotal = (it['subtotal'] as num?)?.toInt() ?? (qty * price);
+
+        if (!menuMap.containsKey(name)) {
+          menuMap[name] = {'menu': name, 'total_qty': 0, 'total_sales': 0};
+        }
+        menuMap[name]!['total_qty'] = (menuMap[name]!['total_qty'] as int) + qty;
+        menuMap[name]!['total_sales'] = (menuMap[name]!['total_sales'] as int) + itemTotal;
+      }
+
+      // Payment breakdown
+      final payments = (order['payments'] as List<dynamic>?) ?? [];
+      if (payments.isEmpty) {
+        paymentMap['Tunai'] = (paymentMap['Tunai'] ?? 0) + tot;
+        totalCashFromSales += tot;
+      } else {
+        for (final p in payments) {
+          final mName = (p['payment_method_name'] ?? p['method'] ?? 'Tunai').toString();
+          final amt = (p['amount'] as num?)?.toInt() ?? tot;
+          paymentMap[mName] = (paymentMap[mName] ?? 0) + amt;
+          if (mName.toLowerCase().contains('tunai') || mName.toLowerCase().contains('cash')) {
+            totalCashFromSales += amt;
+          }
+        }
+      }
+    }
+
+    final expCash = startCash + totalCashFromSales;
+    final diff = actualCash - expCash;
+
+    final menuList = menuMap.values.toList();
+    for (var i = 0; i < menuList.length; i++) {
+      menuList[i]['no'] = i + 1;
+    }
+
+    final paymentsList = paymentMap.entries.map((e) => {
+      'payment_method_name': e.key,
+      'total_amount': e.value,
+    }).toList();
 
     return {
       'shift_info': {
@@ -565,39 +716,39 @@ class PosSyncService extends ChangeNotifier {
         'cashier_username': user?['username'] ?? 'kasir',
         'shift_id': shiftData?['id'] ?? DateTime.now().millisecondsSinceEpoch ~/ 1000,
         'opened_at': shiftData?['opened_at'] ?? DateTime.now().toIso8601String(),
-        'closed_at': DateTime.now().toIso8601String(),
+        'closed_at': isOpenShift ? null : (shiftData?['closed_at'] ?? DateTime.now().toIso8601String()),
         'printed_at': DateTime.now().toIso8601String(),
-        'close_type': 'manual',
-        'status': 'closed',
+        'close_type': isOpenShift ? 'preview' : 'manual',
+        'status': isOpenShift ? 'open' : 'closed',
       },
       'menu_summary': {
-        'items': <Map<String, dynamic>>[],
+        'items': menuList,
         'total': {
-          'total_qty': 0,
-          'total_sales': 0,
+          'total_qty': menuList.fold<int>(0, (sum, m) => sum + (m['total_qty'] as int)),
+          'total_sales': grossSales,
         },
       },
       'transaction_summary': {
-        'completed_transaction_count': 0,
-        'gross_sales': 0,
-        'total_discount': 0,
-        'discount_breakdown': {'promo': 0, 'voucher': 0, 'loyalty': 0, 'manual': 0},
-        'tax_amount': 0,
-        'service_charge_amount': 0,
-        'rounding_amount': 0,
-        'net_sales': 0,
-        'payments_by_method': <Map<String, dynamic>>[],
+        'completed_transaction_count': completedOrders.length,
+        'gross_sales': grossSales,
+        'total_discount': totalDiscount,
+        'discount_breakdown': {'promo': 0, 'voucher': 0, 'loyalty': 0, 'manual': totalDiscount},
+        'tax_amount': taxAmount,
+        'service_charge_amount': serviceChargeAmount,
+        'rounding_amount': roundingAmount,
+        'net_sales': netSales,
+        'payments_by_method': paymentsList,
         'cash_reconciliation': {
           'starting_cash': startCash,
           'expected_cash': expCash,
-          'actual_cash': actualCash,
-          'cash_difference': diff,
+          'actual_cash': isOpenShift ? expCash : actualCash,
+          'cash_difference': isOpenShift ? 0 : diff,
         },
       },
     };
   }
 
-  /// Fetch Close Shift Report for specified shift or latest closed shift
+  /// Fetch Close Shift Report for specified shift or latest closed shift (supports preview of active shift)
   Future<Map<String, dynamic>?> fetchCurrentShiftReport({int? shiftId}) async {
     try {
       final targetBranchId = _branch['id'] ?? currentUser?['branch_id'];
@@ -625,6 +776,12 @@ class PosSyncService extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('[PosSyncService] Error fetching shift report: $e');
+    }
+
+    // Fallback: jika offline atau server gagal dihubungi, susun laporan secara lokal
+    if (_currentShift != null) {
+      final expCash = (_currentShift?['expected_cash'] as num?)?.toInt() ?? (_currentShift?['starting_cash'] as num?)?.toInt() ?? 0;
+      return generateLocalReport(_currentShift, expCash, isOpenShift: true);
     }
     return null;
   }
@@ -662,7 +819,25 @@ class PosSyncService extends ChangeNotifier {
       }
       return {'success': false, 'message': body['message'] ?? 'Gagal menahan pesanan.'};
     } catch (e) {
-      return {'success': false, 'message': 'Gagal koneksi ke server Hold Bill: $e'};
+      // Local fallback for offline resilience (FR-OFF-02)
+      final localId = DateTime.now().millisecondsSinceEpoch;
+      final localOrder = {
+        'id': localId,
+        'order_no': 'OFF-HOLD-${localId.toString().substring(7)}',
+        'table_id': payload['table_id'],
+        'order_type_id': payload['order_type_id'],
+        'hold_reference': payload['hold_reference'] ?? 'Open Bill',
+        'hold_notes': payload['hold_notes'],
+        'held_at': DateTime.now().toIso8601String(),
+        'manual_discount_amount': payload['manual_discount'] ?? 0,
+        'items': payload['items'] ?? [],
+        'total_amount': payload['total_amount'] ?? 0,
+        'is_offline_hold': true,
+      };
+      _heldOrders.insert(0, localOrder);
+      _saveHeldOrdersToDisk();
+      notifyListeners();
+      return {'success': true, 'order': localOrder, 'offline': true};
     }
   }
 
@@ -690,7 +865,22 @@ class PosSyncService extends ChangeNotifier {
       final body = jsonDecode(response.body) as Map<String, dynamic>;
       if (response.statusCode == 200 && body['success'] == true) {
         final list = (body['held_bills'] as List<dynamic>?) ?? [];
-        _heldOrders = list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        final serverList = list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        final serverIds = serverList.map((s) => s['id']).toSet();
+
+        // Anti-Fraud & Concurrency Guard:
+        // Retain local holds that haven't been completed or voided yet
+        // (including active resumed bills that may be filtered out on older server queries)
+        final retainedLocalHolds = _heldOrders.where((o) {
+          if (o['is_offline_hold'] == true) return true;
+          if (!serverIds.contains(o['id']) && o['status'] != 'completed' && o['status'] != 'voided') {
+            return true;
+          }
+          return false;
+        }).toList();
+
+        _heldOrders = [...retainedLocalHolds, ...serverList];
+        _saveHeldOrdersToDisk();
         notifyListeners();
         return _heldOrders;
       }
@@ -699,6 +889,15 @@ class PosSyncService extends ChangeNotifier {
   }
 
   Future<Map<String, dynamic>> resumeHeldOrder(int orderId) async {
+    // Check if it is a local offline hold first
+    final offlineIdx = _heldOrders.indexWhere((o) => o['id'] == orderId && o['is_offline_hold'] == true);
+    if (offlineIdx != -1) {
+      final found = _heldOrders[offlineIdx];
+      // Do not remove from _heldOrders so that if payment is closed before completion,
+      // the order remains safe as an Open Bill!
+      return {'success': true, 'order': found};
+    }
+
     try {
       final uri = Uri.parse('$baseUrl/orders/$orderId/resume');
       final response = await http.post(
@@ -711,16 +910,78 @@ class PosSyncService extends ChangeNotifier {
 
       final body = jsonDecode(response.body) as Map<String, dynamic>;
       if (response.statusCode == 200 && body['success'] == true) {
+        final resumed = body['order'] as Map<String, dynamic>?;
+        if (resumed != null) {
+          final idx = _heldOrders.indexWhere((o) => o['id'] == orderId);
+          if (idx != -1) {
+            _heldOrders[idx] = Map<String, dynamic>.from(resumed);
+          } else {
+            _heldOrders.add(Map<String, dynamic>.from(resumed));
+          }
+          _saveHeldOrdersToDisk();
+        }
         await fetchHeldOrders();
-        return {'success': true, 'order': body['order']};
+        return {'success': true, 'order': resumed ?? body['order']};
       }
       return {'success': false, 'message': body['message'] ?? 'Gagal melanjutkan pesanan.'};
     } catch (e) {
+      // If server unreachable, check if we have cached copy in heldOrders
+      final cached = _heldOrders.firstWhere((o) => o['id'] == orderId, orElse: () => {});
+      if (cached.isNotEmpty) {
+        return {'success': true, 'order': cached};
+      }
       return {'success': false, 'message': 'Gagal menghubungi server: $e'};
     }
   }
 
+  /// Safely save a resumed open bill back into the held orders list
+  Future<Map<String, dynamic>> reHoldOrder(int orderId, Map<String, dynamic> payload) async {
+    final idx = _heldOrders.indexWhere((o) => o['id'] == orderId);
+    if (idx != -1) {
+      _heldOrders[idx]['status'] = 'on_hold';
+      _heldOrders[idx]['is_unresolved_hold'] = false;
+      if (payload['total_amount'] != null) _heldOrders[idx]['total_amount'] = payload['total_amount'];
+      if (payload['subtotal'] != null) _heldOrders[idx]['subtotal'] = payload['subtotal'];
+      if (payload['items'] != null) _heldOrders[idx]['items'] = payload['items'];
+      if (payload['table_id'] != null) _heldOrders[idx]['table_id'] = payload['table_id'];
+      if (payload['hold_reference'] != null) _heldOrders[idx]['hold_reference'] = payload['hold_reference'];
+      if (payload['hold_notes'] != null) _heldOrders[idx]['hold_notes'] = payload['hold_notes'];
+      _saveHeldOrdersToDisk();
+      notifyListeners();
+    }
+
+    try {
+      final uri = Uri.parse('$baseUrl/orders/$orderId/re-hold');
+      final response = await http.post(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $authToken',
+        },
+        body: jsonEncode(payload),
+      ).timeout(const Duration(seconds: 6));
+
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200 && body['success'] == true) {
+        await fetchHeldOrders();
+        return {'success': true, 'order': body['order']};
+      }
+      return {'success': true, 'local_only': true, 'message': 'Tersimpan lokal'};
+    } catch (e) {
+      return {'success': true, 'offline': true, 'message': 'Tersimpan offline: $e'};
+    }
+  }
+
   Future<Map<String, dynamic>> cancelHeldOrder(int orderId, String reason) async {
+    final offlineIdx = _heldOrders.indexWhere((o) => o['id'] == orderId && o['is_offline_hold'] == true);
+    if (offlineIdx != -1) {
+      _heldOrders.removeAt(offlineIdx);
+      _saveHeldOrdersToDisk();
+      notifyListeners();
+      return {'success': true};
+    }
+
     try {
       final uri = Uri.parse('$baseUrl/orders/$orderId/cancel-hold');
       final response = await http.post(
@@ -740,8 +1001,40 @@ class PosSyncService extends ChangeNotifier {
       }
       return {'success': false, 'message': body['message'] ?? 'Gagal membatalkan pesanan.'};
     } catch (e) {
+      final cachedIdx = _heldOrders.indexWhere((o) => o['id'] == orderId);
+      if (cachedIdx != -1) {
+        _heldOrders.removeAt(cachedIdx);
+        _saveHeldOrdersToDisk();
+        notifyListeners();
+        return {'success': true};
+      }
       return {'success': false, 'message': 'Gagal menghubungi server: $e'};
     }
+  }
+
+  Future<void> _loadHeldOrdersFromDisk() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final str = prefs.getString(_prefKeyHeldOrdersCache);
+      if (str != null && str.isNotEmpty) {
+        final list = jsonDecode(str) as List<dynamic>;
+        final loaded = list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        final existingIds = _heldOrders.map((o) => o['id']).toSet();
+        for (final item in loaded) {
+          if (!existingIds.contains(item['id'])) {
+            _heldOrders.add(item);
+          }
+        }
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  void _saveHeldOrdersToDisk() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefKeyHeldOrdersCache, jsonEncode(_heldOrders));
+    } catch (_) {}
   }
 
   /// Void a completed transaction (requires 6-digit Supervisor PIN Void and reason)
@@ -1027,12 +1320,19 @@ class PosSyncService extends ChangeNotifier {
     }
   }
 
+  int _syncTickCount = 0;
+
   /// Start background auto-sync timer
   void startAutoSync() {
     _autoSyncTimer?.cancel();
     _autoSyncTimer = Timer.periodic(const Duration(seconds: 12), (_) {
+      _syncTickCount++;
       if (OutboxManager().queueSize > 0 || !_isOnline) {
         flushOutbox();
+      }
+      // Periodically refresh active shift status every ~60 seconds (5 ticks) if logged in & online
+      if (_syncTickCount % 5 == 0 && isLoggedIn && _isOnline && !_isSyncing) {
+        fetchCurrentShift();
       }
     });
   }
@@ -1345,6 +1645,14 @@ class PosSyncService extends ChangeNotifier {
   Future<bool> submitOrder(Map<String, dynamic> orderPayload) async {
     final uuid = orderPayload['uuid'] as String;
     final orderNo = orderPayload['order_no'] as String;
+
+    // Jika transaksi ini menyelesaikan Open Bill (Hold Order), hapus dari daftar held lokal
+    final resumedId = orderPayload['resumed_order_id'];
+    if (resumedId != null) {
+      _heldOrders.removeWhere((o) => o['id'] == resumedId);
+      _saveHeldOrdersToDisk();
+      notifyListeners();
+    }
 
     final item = OutboxItem(
       uuid: uuid,

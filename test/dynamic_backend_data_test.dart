@@ -2,10 +2,16 @@
 // Tests verifying 100% dynamic backend catalog ingestion and URL configuration
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:mobile/core/sync/pos_sync_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  SharedPreferences.setMockInitialValues({});
+
+  setUpAll(() {
+    SharedPreferences.setMockInitialValues({});
+  });
 
   group('Dynamic Backend Data Ingestion Tests', () {
     final syncService = PosSyncService.instance;

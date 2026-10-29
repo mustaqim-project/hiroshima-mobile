@@ -43,6 +43,39 @@ void main() {
       final res = await service.printTest();
       expect(res.success, isFalse);
       expect(res.message, contains('belum terhubung'));
+
+      final kitchenRes = await service.printKitchenTicketOnly(
+        branchName: 'Hiroshima Test',
+        orderNo: 'TEST-001',
+        tableNo: '01',
+        orderTypeName: 'Dine In',
+        transactionTime: DateTime.now(),
+        items: [{'name': 'Ramen', 'qty': 1, 'price': 30000}],
+      );
+      expect(kitchenRes.success, isFalse);
+      expect(kitchenRes.message, contains('belum terhubung'));
+
+      final paidRes = await service.printCustomerReceiptOnly(
+        branchName: 'Hiroshima Test',
+        branchAddress: 'Jl. Test',
+        branchPhone: '021',
+        orderNo: 'TEST-001',
+        tableNo: '01',
+        orderTypeName: 'Dine In',
+        cashierName: 'Kasir',
+        transactionTime: DateTime.now(),
+        items: [{'name': 'Ramen', 'qty': 1, 'price': 30000}],
+        subtotal: 30000,
+        totalDiscount: 0,
+        serviceChargeAmount: 0,
+        taxAmount: 3000,
+        roundingAmount: 0,
+        totalAmount: 33000,
+        payments: [{'method': 'Tunai', 'amount': 35000}],
+        changeAmount: 2000,
+      );
+      expect(paidRes.success, isFalse);
+      expect(paidRes.message, contains('belum terhubung'));
     });
   });
 }
