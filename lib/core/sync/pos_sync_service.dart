@@ -1523,7 +1523,16 @@ class PosSyncService extends ChangeNotifier {
 
     for (final p in _products) {
       final pId = p['id'];
-      p['price'] = getProductPrice(pId, defaultOtId, defaultPrice: (p['manual_cost'] as num?)?.toInt() ?? 0);
+      final variants = (p['variants'] as List<dynamic>?) ?? [];
+      int defPrice = (p['manual_cost'] as num?)?.toInt() ?? 0;
+      if (defPrice == 0 && variants.isNotEmpty) {
+        defPrice = (variants.first['price'] as num?)?.toInt() ?? 0;
+      }
+      int calcPrice = getProductPrice(pId, defaultOtId, defaultPrice: defPrice);
+      if (calcPrice == 0 && variants.isNotEmpty) {
+        calcPrice = (variants.first['price'] as num?)?.toInt() ?? 0;
+      }
+      p['price'] = calcPrice;
     }
   }
 
@@ -1539,14 +1548,15 @@ class PosSyncService extends ChangeNotifier {
     final pIdStr = productId.toString();
     final otIdStr = orderTypeId.toString();
     final branchId = _branch['id']?.toString();
+    final isVariant = sellableType != null && sellableType.toLowerCase().contains('variant');
 
     bool matchesType(Map<String, dynamic> pr) {
       if (sellableType == null) return true;
-      final type = pr['sellable_type']?.toString();
-      if (type == null) return true;
-      final queryLower = sellableType.toLowerCase();
-      final typeLower = type.toLowerCase();
-      return typeLower.contains(queryLower);
+      final rawType = pr['sellable_type']?.toString();
+      if (rawType == null) return true;
+      final typeName = rawType.split(r'\').last.toLowerCase();
+      final isRecordVariant = typeName.contains('variant');
+      return isVariant == isRecordVariant;
     }
 
     // 1. Match exact branch override in _productPrices (PriceResolver priority)
@@ -1589,23 +1599,7 @@ class PosSyncService extends ChangeNotifier {
       return (anyExact['price'] as num).toInt();
     }
 
-    // 4. Check embedded prices in product object from _products
-    final pMatch = _products.firstWhere(
-      (p) => p['id']?.toString() == pIdStr,
-      orElse: () => {},
-    );
-    if (pMatch.isNotEmpty && pMatch['prices'] is List) {
-      final pPrices = (pMatch['prices'] as List<dynamic>).map((e) => e as Map<String, dynamic>).toList();
-      final embeddedExact = pPrices.firstWhere(
-        (pr) => pr['order_type_id']?.toString() == otIdStr && matchesType(pr),
-        orElse: () => {},
-      );
-      if (embeddedExact.isNotEmpty && embeddedExact['price'] != null) {
-        return (embeddedExact['price'] as num).toInt();
-      }
-    }
-
-    // 5. Fallback to default order type price
+    // 4. Fallback to default order type price in _productPrices
     final defaultOt = _orderTypes.firstWhere(
       (ot) => ot['is_default'] == true,
       orElse: () => {},
@@ -1624,7 +1618,7 @@ class PosSyncService extends ChangeNotifier {
       }
     }
 
-    // 6. Fallback to any price for this sellable_id
+    // 5. Fallback to any price for this sellable_id in _productPrices
     final anyPrice = _productPrices.firstWhere(
       (pr) => pr['sellable_id']?.toString() == pIdStr && matchesType(pr),
       orElse: () => {},
@@ -1633,7 +1627,42 @@ class PosSyncService extends ChangeNotifier {
       return (anyPrice['price'] as num).toInt();
     }
 
-    // 7. Fallback to product 'price' field if present
+    // 6. Handle Variant specific fallback (DO NOT lookup _products with pIdStr because pIdStr is variant ID)
+    if (isVariant) {
+      if (defaultPrice > 0) {
+        return defaultPrice;
+      }
+      for (final p in _products) {
+        final variants = (p['variants'] as List<dynamic>?) ?? [];
+        for (final v in variants) {
+          if (v is Map<String, dynamic> && v['id']?.toString() == pIdStr) {
+            final vp = (v['price'] as num?)?.toInt();
+            if (vp != null && vp > 0) {
+              return vp;
+            }
+          }
+        }
+      }
+      return defaultPrice;
+    }
+
+    // 7. Check embedded prices in product object from _products
+    final pMatch = _products.firstWhere(
+      (p) => p['id']?.toString() == pIdStr,
+      orElse: () => {},
+    );
+    if (pMatch.isNotEmpty && pMatch['prices'] is List) {
+      final pPrices = (pMatch['prices'] as List<dynamic>).map((e) => e as Map<String, dynamic>).toList();
+      final embeddedExact = pPrices.firstWhere(
+        (pr) => pr['order_type_id']?.toString() == otIdStr && matchesType(pr),
+        orElse: () => {},
+      );
+      if (embeddedExact.isNotEmpty && embeddedExact['price'] != null) {
+        return (embeddedExact['price'] as num).toInt();
+      }
+    }
+
+    // 8. Fallback to product 'price' field if present
     if (pMatch.isNotEmpty && pMatch['price'] != null) {
       return (pMatch['price'] as num).toInt();
     }
@@ -1720,7 +1749,12 @@ class PosSyncService extends ChangeNotifier {
           final resMap = res as Map<String, dynamic>;
           final uuid = resMap['uuid'] as String?;
           final status = resMap['status'] as String?;
-          if (uuid != null && (status == 'processed' || status == 'duplicate_ok' || status == 'auto_resolved')) {
+          if (uuid != null &&
+              (status == 'processed' ||
+                  status == 'duplicate_ok' ||
+                  status == 'auto_resolved' ||
+                  status == 'accepted' ||
+                  status == 'accepted_flagged')) {
             OutboxManager().acknowledgeFinalStatus(uuid);
           }
         }

@@ -164,16 +164,24 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
       'paid_amount': _isCash ? _cashGiven : calc.totalAmount,
       'change_amount': _changeAmount > 0 ? _changeAmount : 0,
       'items': widget.cart.map((item) {
+        final modifiers = (item['modifiers'] as List<dynamic>?) ?? [];
+        final modExtra = modifiers.fold<int>(
+          0,
+          (sum, m) => sum + ((m['price'] ?? m['unit_price'] ?? 0) as num).toInt(),
+        );
+        final basePrice = (item['base_price'] as int?) ?? ((item['price'] as int) - modExtra);
+
         return {
           'product_id': item['id'],
           'product_variant_id': item['variant_id'],
           'product_name': item['name'],
           'variant_name': item['variant_name'],
           'quantity': item['qty'],
-          'unit_price': item['price'],
+          'unit_price': basePrice,
+          'base_price': basePrice,
           'subtotal': (item['price'] as int) * (item['qty'] as int),
           'notes': item['notes'],
-          'modifiers': ((item['modifiers'] as List<dynamic>?) ?? []).map((m) => {
+          'modifiers': modifiers.map((m) => {
             'modifier_id': m['modifier_id'] ?? m['id'],
             'modifier_name': m['name'] ?? m['modifier_name'],
             'unit_price': m['price'] ?? m['unit_price'] ?? 0,

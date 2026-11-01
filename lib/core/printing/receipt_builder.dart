@@ -65,11 +65,17 @@ class ReceiptBuilder {
     // 4. INFORMASI ORDER (ITEMS & FINANCIAL SUMMARY)
     for (final item in items) {
       final name = item['name'] as String;
+      final variantName = item['variant_name'] as String?;
+      final displayName = (variantName != null &&
+              variantName.isNotEmpty &&
+              !name.toLowerCase().contains(variantName.toLowerCase()))
+          ? '$name ($variantName)'
+          : name;
       final qty = item['qty'] as int;
       final price = item['price'] as int;
       final itemSubtotal = qty * price;
 
-      buffer.writeln(name);
+      buffer.writeln(displayName);
       buffer.writeln('  ${qty}x ${_currencyFormat.format(price).padRight(12)} ${_currencyFormat.format(itemSubtotal).padLeft(12)}');
 
       final notes = item['notes'] as String?;
@@ -160,8 +166,14 @@ class ReceiptBuilder {
 
     for (final item in items) {
       final name = item['name'] as String;
+      final variantName = item['variant_name'] as String?;
+      final displayName = (variantName != null &&
+              variantName.isNotEmpty &&
+              !name.toLowerCase().contains(variantName.toLowerCase()))
+          ? '$name ($variantName)'
+          : name;
       final qty = item['qty'] as int;
-      buffer.writeln('${qty}x  $name');
+      buffer.writeln('${qty}x  $displayName');
 
       final notes = item['notes'] as String?;
       if (notes != null && notes.isNotEmpty) {

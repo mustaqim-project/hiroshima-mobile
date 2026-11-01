@@ -232,12 +232,23 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
       final variants = (p['variants'] as List<dynamic>?) ?? [];
       final modifierGroups = ((p['modifier_groups'] ?? p['modifierGroups']) as List<dynamic>?) ?? [];
 
+      int prodPrice = (p['price'] as num?)?.toInt() ?? 0;
+      if (prodPrice == 0 && variants.isNotEmpty) {
+        final firstVar = variants.first as Map<String, dynamic>;
+        prodPrice = PosSyncService.instance.getProductPrice(
+          firstVar['id'],
+          _selectedOrderTypeId,
+          sellableType: 'variant',
+          defaultPrice: (firstVar['price'] as num?)?.toInt() ?? 0,
+        );
+      }
+
       return {
         'id': p['id'],
         'name': p['name'] as String,
         'sku': p['sku'] ?? 'SKU-${p['id']}',
         'category': cat['name'] as String,
-        'price': (p['price'] as num?)?.toInt() ?? 0,
+        'price': prodPrice,
         'image_path': p['image_path'] ?? p['image_url'],
         'has_variants': hasVariants,
         'variants': variants,
@@ -330,12 +341,13 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                 variantId,
                 newTypeId,
                 sellableType: 'variant',
-                defaultPrice: PosSyncService.instance.getProductPrice(
-                  pId,
-                  newTypeId,
-                  sellableType: 'Product',
-                  defaultPrice: _getBaseProductPrice(pId),
-                ),
+                defaultPrice: (item['base_price'] as num?)?.toInt() ??
+                    PosSyncService.instance.getProductPrice(
+                      pId,
+                      newTypeId,
+                      sellableType: 'Product',
+                      defaultPrice: _getBaseProductPrice(pId),
+                    ),
               )
             : PosSyncService.instance.getProductPrice(
                 pId,
@@ -344,6 +356,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                 defaultPrice: _getBaseProductPrice(pId),
               );
         item['price'] = basePrice + modExtra;
+        item['base_price'] = basePrice;
       }
     });
     if (modalSetState != null) {
@@ -392,6 +405,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
           'id': product['id'],
           'name': product['name'],
           'price': finalUnitPrice,
+          'base_price': basePrice,
           'qty': 1,
           'variant_id': variantId,
           'variant_name': variantName,
@@ -977,20 +991,31 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                 'tax_amount': calcSnapshot.taxAmount,
                 'service_charge_amount': calcSnapshot.serviceChargeAmount,
                 'rounding_amount': calcSnapshot.roundingAmount,
-                'items': _cart.map((item) => {
-                  'product_id': item['id'],
-                  'product_variant_id': item['variant_id'],
-                  'product_name': item['name'],
-                  'variant_name': item['variant_name'],
-                  'quantity': item['qty'],
-                  'unit_price': item['price'],
-                  'notes': item['notes'],
-                  'modifiers': ((item['modifiers'] as List<dynamic>?) ?? []).map((m) => {
-                    'modifier_id': m['modifier_id'] ?? m['id'],
-                    'modifier_name': m['name'] ?? m['modifier_name'],
-                    'unit_price': m['price'] ?? m['unit_price'] ?? 0,
-                    'quantity': 1,
-                  }).toList(),
+                'items': _cart.map((item) {
+                  final modifiers = (item['modifiers'] as List<dynamic>?) ?? [];
+                  final modExtra = modifiers.fold<int>(
+                    0,
+                    (sum, m) => sum + ((m['price'] ?? m['unit_price'] ?? 0) as num).toInt(),
+                  );
+                  final basePrice = (item['base_price'] as int?) ?? ((item['price'] as int) - modExtra);
+
+                  return {
+                    'product_id': item['id'],
+                    'product_variant_id': item['variant_id'],
+                    'product_name': item['name'],
+                    'variant_name': item['variant_name'],
+                    'quantity': item['qty'],
+                    'unit_price': basePrice,
+                    'base_price': basePrice,
+                    'subtotal': (item['price'] as int) * (item['qty'] as int),
+                    'notes': item['notes'],
+                    'modifiers': modifiers.map((m) => {
+                      'modifier_id': m['modifier_id'] ?? m['id'],
+                      'modifier_name': m['name'] ?? m['modifier_name'],
+                      'unit_price': m['price'] ?? m['unit_price'] ?? 0,
+                      'quantity': 1,
+                    }).toList(),
+                  };
                 }).toList(),
               };
 
@@ -1087,20 +1112,31 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
       'tax_amount': calcSnapshot.taxAmount,
       'service_charge_amount': calcSnapshot.serviceChargeAmount,
       'rounding_amount': calcSnapshot.roundingAmount,
-      'items': _cart.map((item) => {
-        'product_id': item['id'],
-        'product_variant_id': item['variant_id'],
-        'product_name': item['name'],
-        'variant_name': item['variant_name'],
-        'quantity': item['qty'],
-        'unit_price': item['price'],
-        'notes': item['notes'],
-        'modifiers': ((item['modifiers'] as List<dynamic>?) ?? []).map((m) => {
-          'modifier_id': m['modifier_id'] ?? m['id'],
-          'modifier_name': m['name'] ?? m['modifier_name'],
-          'unit_price': m['price'] ?? m['unit_price'] ?? 0,
-          'quantity': 1,
-        }).toList(),
+      'items': _cart.map((item) {
+        final modifiers = (item['modifiers'] as List<dynamic>?) ?? [];
+        final modExtra = modifiers.fold<int>(
+          0,
+          (sum, m) => sum + ((m['price'] ?? m['unit_price'] ?? 0) as num).toInt(),
+        );
+        final basePrice = (item['base_price'] as int?) ?? ((item['price'] as int) - modExtra);
+
+        return {
+          'product_id': item['id'],
+          'product_variant_id': item['variant_id'],
+          'product_name': item['name'],
+          'variant_name': item['variant_name'],
+          'quantity': item['qty'],
+          'unit_price': basePrice,
+          'base_price': basePrice,
+          'subtotal': (item['price'] as int) * (item['qty'] as int),
+          'notes': item['notes'],
+          'modifiers': modifiers.map((m) => {
+            'modifier_id': m['modifier_id'] ?? m['id'],
+            'modifier_name': m['name'] ?? m['modifier_name'],
+            'unit_price': m['price'] ?? m['unit_price'] ?? 0,
+            'quantity': 1,
+          }).toList(),
+        };
       }).toList(),
     };
 
@@ -1373,10 +1409,20 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
             'price': m['unit_price'],
           }).toList();
 
+          final modExtra = modifiers.fold<int>(
+            0,
+            (sum, m) => sum + ((m['price'] ?? 0) as num).toInt(),
+          );
+          final rawUnitPrice = (it['unit_price'] as num?)?.toInt() ?? 0;
+          final lineUnitPrice = (it['subtotal'] != null && (it['quantity'] as int) > 0)
+              ? ((it['subtotal'] as int) ~/ (it['quantity'] as int))
+              : (rawUnitPrice + modExtra);
+
           _cart.add({
             'id': it['product_id'],
             'name': it['product_name'],
-            'price': it['unit_price'] as int,
+            'price': lineUnitPrice,
+            'base_price': rawUnitPrice,
             'qty': it['quantity'] as int,
             'variant_id': it['product_variant_id'],
             'variant_name': it['variant_name'],
@@ -3271,11 +3317,24 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
         'price': (m['unit_price'] as num?)?.toInt() ?? 0,
       }).toList();
 
+      final modExtra = mods.fold<int>(
+        0,
+        (sum, m) => sum + ((m['price'] ?? 0) as num).toInt(),
+      );
+      final qty = (e['quantity'] as num?)?.toInt() ?? (e['qty'] as num?)?.toInt() ?? 1;
+      final rawUnitPrice = (e['unit_price'] as num?)?.toInt() ?? 0;
+      final displayPrice = (e['subtotal'] != null && qty > 0)
+          ? ((e['subtotal'] as num).toInt() ~/ qty)
+          : (rawUnitPrice + modExtra);
+
       return {
         'id': e['product_id'] ?? e['id'],
         'name': e['product_name'] ?? e['name'] ?? 'Menu',
-        'price': (e['unit_price'] as num?)?.toInt() ?? 0,
-        'qty': (e['quantity'] as num?)?.toInt() ?? (e['qty'] as num?)?.toInt() ?? 1,
+        'price': displayPrice,
+        'base_price': rawUnitPrice,
+        'variant_id': e['product_variant_id'],
+        'variant_name': e['variant_name'],
+        'qty': qty,
         'modifiers': mods,
         'notes': e['notes'],
       };

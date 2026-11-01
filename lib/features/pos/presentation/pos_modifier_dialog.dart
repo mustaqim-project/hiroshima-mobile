@@ -102,14 +102,18 @@ class _PosModifierDialogState extends State<PosModifierDialog> {
   }
 
   String? get _validationError {
+    if (_variants.isNotEmpty && _selectedVariant == null) {
+      return 'Wajib memilih salah satu varian.';
+    }
     for (final g in _modifierGroups) {
       final gId = (g['id'] as num?)?.toInt() ?? 0;
       final gName = g['name'] as String? ?? 'Pilihan';
       final isRequired = g['is_required'] == true;
+      final minSelect = (g['min_select'] as num?)?.toInt() ?? (isRequired ? 1 : 0);
       final selected = _selectedModsByGroup[gId] ?? [];
 
-      if (isRequired && selected.isEmpty) {
-        return 'Wajib memilih salah satu opsi untuk "$gName".';
+      if (minSelect > 0 && selected.length < minSelect) {
+        return 'Wajib memilih minimal $minSelect opsi untuk "$gName".';
       }
     }
     return null;
@@ -333,6 +337,10 @@ class _PosModifierDialogState extends State<PosModifierDialog> {
                                                   if (isSel) {
                                                     _selectedModsByGroup[gId] = selected.where((s) => (s['id'] ?? s['modifier_id']) != mId).toList();
                                                   } else {
+                                                    final maxSelect = (g['max_select'] as num?)?.toInt() ?? 0;
+                                                    if (maxSelect > 0 && selected.length >= maxSelect) {
+                                                      return;
+                                                    }
                                                     _selectedModsByGroup[gId] = [...selected, m];
                                                   }
                                                 }
