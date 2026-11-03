@@ -18,12 +18,16 @@ import '../../../core/theme/ios_components.dart';
 import '../../../core/theme/ios_tokens.dart';
 import '../../../core/theme/pos_product_image.dart';
 import '../../../core/theme/theme_controller.dart';
+import '../../../core/time/trusted_clock.dart';
+import '../../../core/time/wib_time.dart';
 import 'pos_modifier_dialog.dart';
 import 'pos_payment_sheet.dart';
 import 'pos_receipt_dialog.dart';
 import 'pos_shift_sheet.dart';
 import 'pos_close_shift_report_dialog.dart';
+import 'pos_update_dialog.dart';
 import '../../auth/presentation/pos_login_screen.dart';
+import '../../../core/update/app_update_service.dart';
 
 class PosTabletScreen extends StatefulWidget {
   const PosTabletScreen({super.key});
@@ -105,12 +109,18 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     PosSyncService.instance.addListener(_onSyncChange);
     ThermalPrinterService.instance.addListener(_onPrinterChange);
+    AppUpdateService.instance.addListener(_onUpdateChange);
 
     // Initial backend fetch & auto-sync start
     PosSyncService.instance.fetchCatalog();
     PosSyncService.instance.fetchCurrentShift();
     PosSyncService.instance.startAutoSync();
     _loadCartDraft();
+
+    // Check for app updates in background
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AppUpdateService.instance.checkForUpdate();
+    });
   }
 
   @override
@@ -119,6 +129,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
     PosSyncService.instance.stopAutoSync();
     PosSyncService.instance.removeListener(_onSyncChange);
     ThermalPrinterService.instance.removeListener(_onPrinterChange);
+    AppUpdateService.instance.removeListener(_onUpdateChange);
     _searchController.dispose();
     super.dispose();
   }
@@ -139,6 +150,79 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
 
   void _onPrinterChange() {
     if (mounted) setState(() {});
+  }
+
+  void _onUpdateChange() {
+    if (mounted) setState(() {});
+  }
+
+  bool _isManualSyncing = false;
+
+  /// Comprehensive manual sync triggered by cashier from top bar
+  Future<void> _handleManualSync() async {
+    if (_isManualSyncing || PosSyncService.instance.isSyncing) return;
+    setState(() => _isManualSyncing = true);
+    HapticFeedback.lightImpact();
+
+    try {
+      final res = await PosSyncService.instance.syncAll(forceRefresh: true);
+      if (!mounted) return;
+
+      HapticFeedback.mediumImpact();
+      final isOnline = PosSyncService.instance.isOnline;
+      final pushedOrders = (res['pushed_orders'] as num?)?.toInt() ?? 0;
+
+      String message;
+      if (isOnline) {
+        if (pushedOrders > 0) {
+          message = 'Sinkronisasi Selesai: $pushedOrders transaksi terkirim. Seluruh data & cache (katalog, shift, pesanan) telah up-to-date.';
+        } else {
+          message = 'Sinkronisasi Selesai: Seluruh data backend & mobile (katalog, shift, transaksi) telah terbarui.';
+        }
+      } else {
+        final pending = PosSyncService.instance.pendingQueueCount;
+        message = 'Koneksi ke backend terputus ($pending antrean). Menggunakan data cache lokal (Offline).';
+      }
+
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(
+                isOnline ? CupertinoIcons.checkmark_circle_fill : CupertinoIcons.wifi_exclamationmark,
+                color: Colors.white,
+                size: 20,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  message,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: isOnline ? const Color(0xFF059669) : const Color(0xFFD97706),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal sinkronisasi: $e'),
+            backgroundColor: CupertinoColors.destructiveRed,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isManualSyncing = false);
+      }
+    }
   }
 
   // Dynamic Branch info from Backend
@@ -820,11 +904,17 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
       if (dismissCurrentModal) {
         Navigator.pop(context);
       }
+      final isCrossBranch = PosSyncService.instance.hasCrossBranchActiveShift;
+      final crossBranchName = PosSyncService.instance.currentShift?['branch_name'] ?? 'cabang lain';
       showCupertinoDialog(
         context: context,
         builder: (ctx) => CupertinoAlertDialog(
-          title: const Text('Shift Kasir Belum Dibuka'),
-          content: const Text('Kasir wajib melakukan Open Shift sebelum dapat memproses transaksi POS.'),
+          title: Text(isCrossBranch ? 'Shift Aktif di Cabang Lain' : 'Shift Kasir Belum Dibuka'),
+          content: Text(
+            isCrossBranch
+                ? 'Anda masih memiliki shift aktif di $crossBranchName. Harap tutup shift tersebut terlebih dahulu sebelum memproses transaksi di cabang ini.'
+                : 'Kasir wajib melakukan Open Shift sebelum dapat memproses transaksi POS.',
+          ),
           actions: [
             CupertinoDialogAction(
               isDefaultAction: true,
@@ -832,7 +922,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                 Navigator.pop(ctx);
                 PosShiftSheet.show(context);
               },
-              child: const Text('Buka Shift Sekarang'),
+              child: Text(isCrossBranch ? 'Kelola Shift' : 'Buka Shift Sekarang'),
             ),
             CupertinoDialogAction(
               isDestructiveAction: true,
@@ -872,11 +962,17 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
     if (_cart.isEmpty) return;
 
     if (!PosSyncService.instance.hasActiveShift) {
+      final isCrossBranch = PosSyncService.instance.hasCrossBranchActiveShift;
+      final crossBranchName = PosSyncService.instance.currentShift?['branch_name'] ?? 'cabang lain';
       showCupertinoDialog(
         context: context,
         builder: (ctx) => CupertinoAlertDialog(
-          title: const Text('Shift Belum Dibuka'),
-          content: const Text('Harap buka shift kasir terlebih dahulu sebelum membuka transaksi Open Bill.'),
+          title: Text(isCrossBranch ? 'Shift Aktif di Cabang Lain' : 'Shift Belum Dibuka'),
+          content: Text(
+            isCrossBranch
+                ? 'Anda masih memiliki shift aktif di $crossBranchName. Harap tutup shift tersebut terlebih dahulu sebelum menahan pesanan (Hold Bill).'
+                : 'Harap buka shift kasir terlebih dahulu sebelum membuka transaksi Open Bill.',
+          ),
           actions: [
             CupertinoDialogAction(
               isDefaultAction: true,
@@ -884,7 +980,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                 Navigator.pop(ctx);
                 PosShiftSheet.show(context);
               },
-              child: const Text('Buka Shift'),
+              child: Text(isCrossBranch ? 'Kelola Shift' : 'Buka Shift'),
             ),
             CupertinoDialogAction(
               isDestructiveAction: true,
@@ -975,7 +1071,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
               final calcSnapshot = _calculation;
               final branch = PosSyncService.instance.branch;
               final branchName = (branch['name'] as String?) ?? 'Hiroshima Japanese Street Food';
-              final now = DateTime.now();
+              final now = TrustedClock().now;
 
               final payload = {
                 'shift_id': PosSyncService.instance.currentShift?['id'],
@@ -983,7 +1079,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                 'table_id': _selectedTableNo != null ? int.tryParse(_selectedTableNo!) : null,
                 'hold_reference': refController.text.trim().isNotEmpty
                     ? refController.text.trim()
-                    : (_selectedTableNo != null ? 'Meja $_selectedTableNo' : 'Bill ${DateFormat('HH:mm').format(DateTime.now())}'),
+                    : (_selectedTableNo != null ? 'Meja $_selectedTableNo' : 'Bill ${WibTime.format(now, "HH:mm")}'),
                 'hold_notes': notesController.text.trim(),
                 'manual_discount': _manualDiscount,
                 'total_amount': calcSnapshot.totalAmount,
@@ -1312,7 +1408,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                               final items = (bill['items'] as List<dynamic>?) ?? [];
                               final total = (bill['total_amount'] as num?)?.toInt() ?? 0;
                               final ref = (bill['hold_reference'] as String?) ?? 'Bill #${bill['order_no']}';
-                              final timeStr = bill['held_at'] != null ? DateFormat('HH:mm').format(DateTime.parse(bill['held_at'])) : '-';
+                              final timeStr = bill['held_at'] != null ? WibTime.format(WibTime.tryParse(bill['held_at']), 'HH:mm') : '-';
 
                               return Container(
                                 padding: const EdgeInsets.all(14),
@@ -1618,8 +1714,59 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
         cancelButton: CupertinoActionSheetAction(
           isDefaultAction: true,
           onPressed: () => Navigator.pop(ctx),
-          child: const Text('Batal'),
+          child: Text(
+            'Batal',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: IOSColors.label.resolveFrom(context),
+            ),
+          ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildMenuActionRow({
+    required BuildContext context,
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    Widget? trailing,
+    bool isDestructive = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: Row(
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: iconColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 18, color: iconColor),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              title,
+              textAlign: TextAlign.left,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: isDestructive
+                    ? CupertinoColors.destructiveRed
+                    : IOSColors.label.resolveFrom(context),
+                decoration: TextDecoration.none,
+              ),
+            ),
+          ),
+          if (trailing != null) ...[
+            const SizedBox(width: 8),
+            trailing,
+          ],
+        ],
       ),
     );
   }
@@ -1629,103 +1776,206 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
     final userName = user?['name'] as String? ?? (user?['username'] as String?) ?? 'Kasir';
     final userRole = user?['role'] as String? ?? 'cashier';
 
+    String roleLabel = userRole;
+    switch (userRole.toLowerCase()) {
+      case 'central_admin':
+      case 'superadmin':
+        roleLabel = 'Superadmin';
+        break;
+      case 'owner':
+        roleLabel = 'Owner';
+        break;
+      case 'branch_manager':
+      case 'manager':
+        roleLabel = 'Branch Manager';
+        break;
+      case 'cashier':
+        roleLabel = 'Kasir';
+        break;
+    }
+
+    final hasActiveShift = PosSyncService.instance.hasActiveShift;
+    final heldCount = PosSyncService.instance.heldOrders.length;
+    final hasUpdate = AppUpdateService.instance.hasUpdate;
+
     showCupertinoModalPopup<void>(
       context: context,
       builder: (BuildContext ctx) => CupertinoActionSheet(
         title: Text(userName, style: IOSText.headline),
-        message: Text('Peran: $userRole · Cabang: $_branchName', style: IOSText.caption1),
+        message: Text('Peran: $roleLabel · Cabang: $_branchName', style: IOSText.caption1),
         actions: <CupertinoActionSheetAction>[
+          // 1. Kelola Shift & Kas Drawer (Operasional Utama)
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(ctx);
+              PosShiftSheet.show(context);
+            },
+            child: _buildMenuActionRow(
+              context: context,
+              icon: CupertinoIcons.money_dollar_circle_fill,
+              iconColor: const Color(0xFF059669),
+              title: 'Kelola Shift & Kas Drawer',
+              trailing: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                decoration: BoxDecoration(
+                  color: (hasActiveShift ? const Color(0xFF059669) : CupertinoColors.systemGrey)
+                      .withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  hasActiveShift ? 'Shift Aktif' : 'Shift Tutup',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: hasActiveShift ? const Color(0xFF059669) : CupertinoColors.systemGrey,
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // 2. Preview Transaksi Shift (X-Report) - hanya saat shift aktif
+          if (hasActiveShift)
+            CupertinoActionSheetAction(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _openShiftPreviewDialog();
+              },
+              child: _buildMenuActionRow(
+                context: context,
+                icon: CupertinoIcons.chart_bar_alt_fill,
+                iconColor: const Color(0xFF2563EB),
+                title: 'Preview Transaksi Shift (X-Report)',
+                trailing: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2563EB).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    'Sedang Berjalan',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF2563EB),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+          // 3. Riwayat & Void Transaksi
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _showRecentOrdersDialog(context);
+            },
+            child: _buildMenuActionRow(
+              context: context,
+              icon: CupertinoIcons.doc_text_search,
+              iconColor: const Color(0xFF4F46E5),
+              title: 'Riwayat & Void Transaksi',
+            ),
+          ),
+
+          // 4. Daftar Open Bill (Antrean pesanan ditahan)
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _openHoldBillsModal();
+            },
+            child: _buildMenuActionRow(
+              context: context,
+              icon: CupertinoIcons.tray_full_fill,
+              iconColor: const Color(0xFFD97706),
+              title: 'Daftar Open Bill',
+              trailing: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                decoration: BoxDecoration(
+                  color: (heldCount > 0 ? const Color(0xFFD97706) : CupertinoColors.systemGrey)
+                      .withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '$heldCount antrean',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: heldCount > 0 ? const Color(0xFFD97706) : CupertinoColors.systemGrey,
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // 5. Printer Kasir Bluetooth
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(ctx);
+              PosPrinterSheet.show(context);
+            },
+            child: _buildMenuActionRow(
+              context: context,
+              icon: CupertinoIcons.printer_fill,
+              iconColor: const Color(0xFF0D9488),
+              title: 'Printer Kasir Bluetooth',
+            ),
+          ),
+
+          // 6. Ganti Cabang Operasional (Khusus hak akses multi-cabang)
           if (PosSyncService.instance.canSwitchBranch)
             CupertinoActionSheetAction(
               onPressed: () {
                 Navigator.pop(ctx);
                 _showBranchPicker(context);
               },
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(CupertinoIcons.arrow_2_squarepath, size: 20, color: IOSColors.accent.resolveFrom(context)),
-                  const SizedBox(width: 8),
-                  Text('Ganti Cabang Operasional', style: TextStyle(fontWeight: FontWeight.w600, color: IOSColors.accent.resolveFrom(context))),
-                ],
+              child: _buildMenuActionRow(
+                context: context,
+                icon: CupertinoIcons.arrow_2_squarepath,
+                iconColor: const Color(0xFF7C3AED),
+                title: 'Ganti Cabang Operasional',
+                trailing: const Icon(
+                  CupertinoIcons.chevron_forward,
+                  size: 14,
+                  color: CupertinoColors.systemGrey,
+                ),
               ),
             ),
+
+          // 7. Cek Pembaruan Aplikasi (OTA)
           CupertinoActionSheetAction(
             onPressed: () {
               Navigator.pop(ctx);
-              _openHoldBillsModal();
+              PosUpdateDialog.show(context, forceCheck: true);
             },
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(CupertinoIcons.tray_full_fill, size: 20, color: IOSColors.warning.resolveFrom(context)),
-                const SizedBox(width: 8),
-                Text('Daftar Open Bill (${PosSyncService.instance.heldOrders.length})',
-                    style: TextStyle(fontWeight: FontWeight.w600, color: IOSColors.warning.resolveFrom(context))),
-              ],
-            ),
-          ),
-          CupertinoActionSheetAction(
-            onPressed: () {
-              Navigator.pop(ctx);
-              PosShiftSheet.show(context);
-            },
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(CupertinoIcons.money_dollar_circle, size: 20),
-                SizedBox(width: 8),
-                Text('Kelola Shift & Kas Drawer'),
-              ],
-            ),
-          ),
-          if (PosSyncService.instance.hasActiveShift)
-            CupertinoActionSheetAction(
-              onPressed: () {
-                Navigator.pop(ctx);
-                _openShiftPreviewDialog();
-              },
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(CupertinoIcons.chart_bar_alt_fill, size: 20, color: Color(0xFF2563EB)),
-                  SizedBox(width: 8),
-                  Text(
-                    'Preview Transaksi Shift (X-Report)',
-                    style: TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF2563EB)),
-                  ),
-                ],
-              ),
-            ),
-          CupertinoActionSheetAction(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _showRecentOrdersDialog(context);
-            },
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(CupertinoIcons.doc_text_search, size: 20, color: IOSColors.accent.resolveFrom(context)),
-                const SizedBox(width: 8),
-                Text('Riwayat & Void Transaksi', style: TextStyle(fontWeight: FontWeight.w600, color: IOSColors.accent.resolveFrom(context))),
-              ],
-            ),
-          ),
-          CupertinoActionSheetAction(
-            onPressed: () {
-              Navigator.pop(ctx);
-              PosPrinterSheet.show(context);
-            },
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(CupertinoIcons.printer, size: 20),
-                SizedBox(width: 8),
-                Text('Printer Kasir Bluetooth'),
-              ],
+            child: _buildMenuActionRow(
+              context: context,
+              icon: CupertinoIcons.arrow_down_circle_fill,
+              iconColor: hasUpdate ? const Color(0xFF059669) : const Color(0xFF0284C7),
+              title: hasUpdate
+                  ? 'Pembaruan Tersedia'
+                  : 'Cek Pembaruan Aplikasi (OTA)',
+              trailing: hasUpdate
+                  ? Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF059669).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        'v${AppUpdateService.instance.latestVersion}',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF059669),
+                        ),
+                      ),
+                    )
+                  : null,
             ),
           ),
 
+          // 8. Ganti Akun Kasir
           CupertinoActionSheetAction(
             onPressed: () {
               Navigator.pop(ctx);
@@ -1733,15 +1983,15 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                 CupertinoPageRoute(builder: (_) => const PosLoginScreen()),
               );
             },
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(CupertinoIcons.arrow_2_squarepath, size: 20),
-                SizedBox(width: 8),
-                Text('Ganti Akun Kasir'),
-              ],
+            child: _buildMenuActionRow(
+              context: context,
+              icon: CupertinoIcons.person_2_fill,
+              iconColor: const Color(0xFF64748B),
+              title: 'Ganti Akun Kasir',
             ),
           ),
+
+          // 9. Keluar Sesi POS (Destructive Action / Logout)
           CupertinoActionSheetAction(
             isDestructiveAction: true,
             onPressed: () async {
@@ -1753,20 +2003,25 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                 );
               }
             },
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(CupertinoIcons.square_arrow_right, size: 20, color: CupertinoColors.destructiveRed),
-                SizedBox(width: 8),
-                Text('Keluar Sesi POS'),
-              ],
+            child: _buildMenuActionRow(
+              context: context,
+              icon: CupertinoIcons.square_arrow_right,
+              iconColor: CupertinoColors.destructiveRed,
+              title: 'Keluar Sesi POS',
+              isDestructive: true,
             ),
           ),
         ],
         cancelButton: CupertinoActionSheetAction(
           isDefaultAction: true,
           onPressed: () => Navigator.pop(ctx),
-          child: const Text('Batal'),
+          child: Text(
+            'Batal',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: IOSColors.label.resolveFrom(context),
+            ),
+          ),
         ),
       ),
     );
@@ -1889,31 +2144,32 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
             // Dynamic Backend Sync Badge
             CupertinoButton(
               padding: EdgeInsets.zero,
-              onPressed: () {
-                syncService.fetchCatalog();
-                syncService.flushOutbox();
-              },
+              onPressed: _handleManualSync,
               child: Container(
                 padding: EdgeInsets.symmetric(
                   horizontal: isTablet ? 10 : 8,
                   vertical: 5,
                 ),
                 decoration: BoxDecoration(
-                  color: syncService.isOnline
-                      ? IOSColors.success.resolveFrom(context).withValues(alpha: 0.12)
-                      : IOSColors.warning.resolveFrom(context).withValues(alpha: 0.15),
+                  color: (_isManualSyncing || syncService.isSyncing)
+                      ? const Color(0xFF2563EB).withValues(alpha: 0.15)
+                      : syncService.isOnline
+                          ? IOSColors.success.resolveFrom(context).withValues(alpha: 0.12)
+                          : IOSColors.warning.resolveFrom(context).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                    color: syncService.isOnline
-                        ? IOSColors.success.resolveFrom(context).withValues(alpha: 0.5)
-                        : IOSColors.warning.resolveFrom(context).withValues(alpha: 0.5),
+                    color: (_isManualSyncing || syncService.isSyncing)
+                        ? const Color(0xFF2563EB).withValues(alpha: 0.5)
+                        : syncService.isOnline
+                            ? IOSColors.success.resolveFrom(context).withValues(alpha: 0.5)
+                            : IOSColors.warning.resolveFrom(context).withValues(alpha: 0.5),
                     width: 0.8,
                   ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (syncService.isSyncing)
+                    if (_isManualSyncing || syncService.isSyncing)
                       const CupertinoActivityIndicator(radius: 6)
                     else
                       Container(
@@ -1924,19 +2180,25 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                           shape: BoxShape.circle,
                         ),
                       ),
-                    if (isTablet) ...[
-                      const SizedBox(width: 6),
-                      Text(
-                        syncService.isOnline
-                            ? (syncService.pendingQueueCount > 0 ? 'Sinkron (${syncService.pendingQueueCount})' : 'Online Backend')
-                            : 'Offline (${syncService.pendingQueueCount})',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: syncService.isOnline ? IOSColors.success.resolveFrom(context) : IOSColors.warning.resolveFrom(context),
-                        ),
+                    const SizedBox(width: 6),
+                    Text(
+                      (_isManualSyncing || syncService.isSyncing)
+                          ? (isTablet ? 'Menyinkronkan...' : 'Sync...')
+                          : syncService.isOnline
+                              ? (syncService.pendingQueueCount > 0
+                                  ? 'Sinkron (${syncService.pendingQueueCount})'
+                                  : (isTablet ? 'Online Backend' : 'Online'))
+                              : 'Offline (${syncService.pendingQueueCount})',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: (_isManualSyncing || syncService.isSyncing)
+                            ? const Color(0xFF2563EB)
+                            : syncService.isOnline
+                                ? IOSColors.success.resolveFrom(context)
+                                : IOSColors.warning.resolveFrom(context),
                       ),
-                    ],
+                    ),
                   ],
                 ),
               ),
@@ -1959,13 +2221,13 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                 icon: CupertinoIcons.money_dollar_circle_fill,
                 semanticLabel: 'Kelola Shift Kasir',
                 color: syncService.hasActiveShift
-                    ? (syncService.currentShift?['is_other_branch'] == true
+                    ? IOSColors.success.resolveFrom(context)
+                    : (syncService.hasCrossBranchActiveShift
                         ? IOSColors.warning.resolveFrom(context)
-                        : IOSColors.success.resolveFrom(context))
-                    : IOSColors.accent.resolveFrom(context),
+                        : IOSColors.accent.resolveFrom(context)),
                 badge: syncService.hasActiveShift
-                    ? (syncService.currentShift?['is_other_branch'] == true ? 'SHIFT CABANG' : 'SHIFT')
-                    : 'TUTUP',
+                    ? 'SHIFT'
+                    : (syncService.hasCrossBranchActiveShift ? 'SHIFT CABANG' : 'TUTUP'),
                 onPressed: () => PosShiftSheet.show(context),
               ),
               const SizedBox(width: 6),
@@ -1994,7 +2256,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
               // Riwayat & Void Transaksi Button
               IOSIconButton(
                 icon: CupertinoIcons.doc_text_search,
-                semanticLabel: 'Riwayat Transaksi & Void (FSD-08)',
+                semanticLabel: 'Riwayat Transaksi & Void',
                 color: IOSColors.label.resolveFrom(context),
                 onPressed: () => _showRecentOrdersDialog(context),
               ),
@@ -2008,6 +2270,43 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                 color: printerService.isConnected ? IOSColors.accent.resolveFrom(context) : CupertinoColors.systemGrey,
                 badge: printerService.isConnected ? 'OK' : null,
                 onPressed: () => PosPrinterSheet.show(context),
+              ),
+              const SizedBox(width: 6),
+            ],
+
+            // OTA Update Available Badge (Header Alert)
+            if (AppUpdateService.instance.hasUpdate) ...[
+              CupertinoButton(
+                padding: EdgeInsets.zero,
+                onPressed: () => PosUpdateDialog.show(context),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: CupertinoColors.activeGreen.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: CupertinoColors.activeGreen.withValues(alpha: 0.6),
+                      width: 0.8,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(CupertinoIcons.arrow_down_circle_fill, size: 14, color: CupertinoColors.activeGreen),
+                      if (isTablet) ...[
+                        const SizedBox(width: 4),
+                        const Text(
+                          'Update',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: CupertinoColors.activeGreen,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
               ),
               const SizedBox(width: 6),
             ],
@@ -2346,7 +2645,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
               label: 'Tarik Data Backend',
               icon: CupertinoIcons.arrow_clockwise,
               variant: IOSButtonVariant.tinted,
-              onPressed: () => syncService.fetchCatalog(),
+              onPressed: _handleManualSync,
             ),
           ],
         ),
@@ -3342,8 +3641,9 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
 
     // Parse payments
     final rawPayments = (order['payments'] as List<dynamic>?) ?? [];
-    final firstPayment = rawPayments.isNotEmpty ? rawPayments.first : {};
+    final firstPayment = rawPayments.isNotEmpty ? (rawPayments.first as Map<String, dynamic>? ?? {}) : <String, dynamic>{};
     final paymentMethodName = firstPayment['payment_method_name_snapshot'] 
+        ?? firstPayment['payment_method_name']
         ?? firstPayment['payment_method']?['name'] 
         ?? firstPayment['method'] 
         ?? 'Tunai (Cash)';
@@ -3367,9 +3667,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
         ? (order['table']['table_no']?.toString())
         : (order['table_no']?.toString());
     final timeRaw = order['client_created_at'] ?? order['created_at'];
-    final transactionTime = timeRaw != null 
-        ? DateTime.tryParse(timeRaw.toString()) ?? DateTime.now()
-        : DateTime.now();
+    final transactionTime = WibTime.tryParse(timeRaw, TrustedClock().now);
 
     showCupertinoDialog(
       context: context,
@@ -3474,7 +3772,7 @@ class _RecentOrdersModalState extends State<_RecentOrdersModal> {
 
   Future<void> _loadOrders() async {
     setState(() => _isLoading = true);
-    final data = await PosSyncService.instance.fetchRecentOrders();
+    final data = await PosSyncService.instance.fetchRecentOrders(forceRefresh: true);
     if (mounted) {
       setState(() {
         _orders = data;
@@ -3546,7 +3844,7 @@ class _RecentOrdersModalState extends State<_RecentOrdersModal> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Riwayat Transaksi & Void (FSD-08)', style: IOSText.headline),
+                          Text('Riwayat Transaksi & Void', style: IOSText.headline),
                           const SizedBox(height: 1),
                           Text(
                             _orders.isEmpty
@@ -3653,9 +3951,18 @@ class _RecentOrdersModalState extends State<_RecentOrdersModal> {
                                   : (o['table_no']?.toString());
                               final timeRaw = o['client_created_at'] ?? o['created_at'];
                               final timeStr = timeRaw != null
-                                  ? DateFormat('dd/MM HH:mm').format(DateTime.tryParse(timeRaw.toString()) ?? DateTime.now())
+                                  ? WibTime.format(WibTime.tryParse(timeRaw), 'dd/MM HH:mm')
                                   : '-';
                               final itemsCount = (o['items'] as List?)?.length ?? 0;
+                              final paymentsList = (o['payments'] as List<dynamic>?) ?? [];
+                              final firstPaymentMap = paymentsList.isNotEmpty ? (paymentsList.first as Map<String, dynamic>? ?? {}) : <String, dynamic>{};
+                              final rawPmName = (firstPaymentMap['payment_method_name_snapshot'] 
+                                  ?? firstPaymentMap['payment_method_name'] 
+                                  ?? firstPaymentMap['payment_method']?['name'] 
+                                  ?? firstPaymentMap['method'] 
+                                  ?? 'Tunai').toString();
+                              final isQris = rawPmName.toLowerCase().contains('qris');
+                              final isCash = !isQris && (rawPmName.toLowerCase().contains('tunai') || rawPmName.toLowerCase().contains('cash'));
 
                               return CupertinoButton(
                                 padding: EdgeInsets.zero,
@@ -3716,13 +4023,51 @@ class _RecentOrdersModalState extends State<_RecentOrdersModal> {
                                                     child: Text('Meja $tableStr', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600)),
                                                   ),
                                                 ],
+                                                const SizedBox(width: 6),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: isQris
+                                                        ? CupertinoColors.systemBlue.withValues(alpha: 0.15)
+                                                        : (isCash
+                                                            ? IOSColors.success.resolveFrom(context).withValues(alpha: 0.15)
+                                                            : CupertinoColors.systemOrange.withValues(alpha: 0.15)),
+                                                    borderRadius: BorderRadius.circular(6),
+                                                  ),
+                                                  child: Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Icon(
+                                                        isQris ? CupertinoIcons.qrcode : (isCash ? CupertinoIcons.money_dollar : CupertinoIcons.creditcard),
+                                                        size: 11,
+                                                        color: isQris
+                                                            ? CupertinoColors.systemBlue
+                                                            : (isCash ? IOSColors.success.resolveFrom(context) : CupertinoColors.systemOrange),
+                                                      ),
+                                                      const SizedBox(width: 3),
+                                                      Text(
+                                                        isQris ? 'QRIS' : (isCash ? 'Tunai' : rawPmName),
+                                                        style: TextStyle(
+                                                          fontSize: 10,
+                                                          fontWeight: FontWeight.w700,
+                                                          color: isQris
+                                                              ? CupertinoColors.systemBlue
+                                                              : (isCash ? IOSColors.success.resolveFrom(context) : CupertinoColors.systemOrange),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
                                               ],
                                             ),
                                             const SizedBox(height: 3),
-                                            Text(
-                                              '$timeStr • $itemsCount menu',
-                                              style: TextStyle(fontSize: 11, color: IOSColors.secondaryLabel.resolveFrom(context)),
-                                            ),
+                                            Builder(builder: (cCtx) {
+                                              final cashierName = (o['user'] is Map ? (o['user']['name'] ?? o['user']['username']) : o['cashier_name'])?.toString() ?? '';
+                                              return Text(
+                                                '$timeStr • $itemsCount menu' + (cashierName.isNotEmpty ? ' • Kasir: $cashierName' : ''),
+                                                style: TextStyle(fontSize: 11, color: IOSColors.secondaryLabel.resolveFrom(context)),
+                                              );
+                                            }),
                                             if (isVoid && o['void_reason'] != null)
                                               Padding(
                                                 padding: const EdgeInsets.only(top: 3),

@@ -1,6 +1,7 @@
 // @req FR-OFF-02, FR-OFF-03, FR-OFF-04, FR-OFF-05, FR-POS-16, FSD-10
 
 import 'dart:collection';
+import '../time/wib_time.dart';
 
 class OutboxItem {
   final String uuid;
@@ -22,7 +23,7 @@ class OutboxItem {
   Map<String, dynamic> toMap() => {
     'uuid': uuid,
     'order_no': orderNo,
-    'client_created_at': clientCreatedAt.toIso8601String(),
+    'client_created_at': WibTime.toIso8601String(clientCreatedAt),
     'payload': payload,
     'retry_count': retryCount,
   };

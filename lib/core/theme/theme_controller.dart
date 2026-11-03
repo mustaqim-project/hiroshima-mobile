@@ -4,8 +4,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ThemeController extends ChangeNotifier {
   static final ThemeController instance = ThemeController._internal();
   factory ThemeController() => instance;
-  ThemeController._internal() {
-    _loadSavedTheme();
+  ThemeController._internal();
+
+  /// Dipanggil satu kali dari main() setelah WidgetsFlutterBinding.ensureInitialized()
+  /// agar SharedPreferences sudah pasti siap di release build.
+  Future<void> initAsync() async {
+    await _loadSavedTheme();
   }
 
   static const String _prefKeyThemeMode = 'hiroshima_pos_theme_mode';

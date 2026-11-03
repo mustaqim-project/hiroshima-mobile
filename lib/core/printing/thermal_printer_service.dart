@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
+import 'package:mobile/core/time/trusted_clock.dart';
+import 'package:mobile/core/time/wib_time.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -302,7 +304,7 @@ class ThermalPrinterService extends ChangeNotifier {
       final List<int> bytes = [];
 
       final currency = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
-      final timeStr = DateFormat('dd/MM/yyyy HH:mm').format(transactionTime);
+      final timeStr = WibTime.format(transactionTime, 'dd/MM/yyyy HH:mm');
 
       // Open Cash Drawer if requested
       if (openDrawer) {
@@ -548,7 +550,7 @@ class ThermalPrinterService extends ChangeNotifier {
       final profile = await _getProfile();
       final generator = Generator(_paperSize, profile);
       final List<int> bytes = [];
-      final timeStr = DateFormat('HH:mm:ss').format(transactionTime);
+      final timeStr = WibTime.format(transactionTime, 'HH:mm:ss');
 
       bytes.addAll(generator.reset());
       bytes.addAll(generator.text('================================', styles: const PosStyles(align: PosAlign.center)));
@@ -670,7 +672,7 @@ class ThermalPrinterService extends ChangeNotifier {
       final List<int> bytes = [];
 
       final currency = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
-      final timeStr = DateFormat('dd/MM/yyyy HH:mm').format(transactionTime);
+      final timeStr = WibTime.format(transactionTime, 'dd/MM/yyyy HH:mm');
 
       if (openDrawer) {
         bytes.addAll(generator.drawer());
@@ -860,7 +862,7 @@ class ThermalPrinterService extends ChangeNotifier {
       bytes.addAll(generator.text('TES KONEKSI PRINTER BERHASIL', styles: const PosStyles(align: PosAlign.center, bold: true)));
       bytes.addAll(generator.text('Tipe Kertas : ${_paperSize == PaperSize.mm80 ? "80 mm" : "58 mm"}', styles: const PosStyles(align: PosAlign.center)));
       bytes.addAll(generator.text('Printer     : ${_connectedName ?? "Panda POS"}', styles: const PosStyles(align: PosAlign.center)));
-      bytes.addAll(generator.text('Waktu       : ${DateFormat("dd/MM/yyyy HH:mm:ss").format(DateTime.now())}', styles: const PosStyles(align: PosAlign.center)));
+      bytes.addAll(generator.text('Waktu       : ${WibTime.format(TrustedClock().now, "dd/MM/yyyy HH:mm:ss")} WIB', styles: const PosStyles(align: PosAlign.center)));
       bytes.addAll(generator.text('--------------------------------', styles: const PosStyles(align: PosAlign.center)));
       bytes.addAll(generator.text('Siap digunakan untuk cetak POS!', styles: const PosStyles(align: PosAlign.center)));
       bytes.addAll(generator.feed(3));
@@ -915,13 +917,11 @@ class ThermalPrinterService extends ChangeNotifier {
       final branchName = (shiftInfo['branch_name'] as String?) ?? 'Hiroshima';
       final cashier = (shiftInfo['cashier_name'] as String?) ?? (shiftInfo['cashier_username'] as String?) ?? 'Kasir';
       final shiftId = shiftInfo['shift_id']?.toString() ?? '-';
-      final closeType = (shiftInfo['close_type'] ?? 'manual') == 'auto' ? 'OTOMATIS (23 JAM)' : 'MANUAL (KASIR)';
+      final closeType = (shiftInfo['close_type'] ?? 'manual') == 'auto' ? 'OTOMATIS (15 JAM)' : 'MANUAL (KASIR)';
 
-      DateTime? openedAt = shiftInfo['opened_at'] != null ? DateTime.tryParse(shiftInfo['opened_at'].toString()) : null;
-      DateTime? closedAt = shiftInfo['closed_at'] != null ? DateTime.tryParse(shiftInfo['closed_at'].toString()) : null;
-      DateTime printedAt = shiftInfo['printed_at'] != null ? (DateTime.tryParse(shiftInfo['printed_at'].toString()) ?? DateTime.now()) : DateTime.now();
-
-      final df = DateFormat('dd/MM/yyyy HH:mm');
+      DateTime? openedAt = shiftInfo['opened_at'] != null ? WibTime.tryParse(shiftInfo['opened_at']) : null;
+      DateTime? closedAt = shiftInfo['closed_at'] != null ? WibTime.tryParse(shiftInfo['closed_at']) : null;
+      DateTime printedAt = WibTime.tryParse(shiftInfo['printed_at'], TrustedClock().now);
 
       // Kick drawer if required
       if (openDrawer) {
@@ -952,7 +952,7 @@ class ThermalPrinterService extends ChangeNotifier {
       ]));
       bytes.addAll(generator.row([
         PosColumn(text: 'Waktu Buka', width: 4),
-        PosColumn(text: ': ${openedAt != null ? df.format(openedAt) : "-"}', width: 8),
+        PosColumn(text: ': ${openedAt != null ? "${WibTime.format(openedAt, "dd/MM/yyyy HH:mm")} WIB" : "-"}', width: 8),
       ]));
       if (isOpen) {
         bytes.addAll(generator.row([
@@ -962,12 +962,12 @@ class ThermalPrinterService extends ChangeNotifier {
       } else {
         bytes.addAll(generator.row([
           PosColumn(text: 'Waktu Tutup', width: 4),
-          PosColumn(text: ': ${closedAt != null ? df.format(closedAt) : "-"}', width: 8),
+          PosColumn(text: ': ${closedAt != null ? "${WibTime.format(closedAt, "dd/MM/yyyy HH:mm")} WIB" : "-"}', width: 8),
         ]));
       }
       bytes.addAll(generator.row([
         PosColumn(text: 'Waktu Cetak', width: 4),
-        PosColumn(text: ': ${df.format(printedAt)}', width: 8),
+        PosColumn(text: ': ${WibTime.format(printedAt, "dd/MM/yyyy HH:mm")} WIB', width: 8),
       ]));
       bytes.addAll(generator.row([
         PosColumn(text: 'Tipe Tutup', width: 4),

@@ -7,13 +7,28 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:mobile/core/sync/pos_sync_service.dart';
 import 'package:mobile/core/theme/ios_tokens.dart';
 import 'package:mobile/core/theme/theme_controller.dart';
 import 'package:mobile/features/auth/presentation/pos_preload_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await IOSSystemUi.init();
+
+  // Inisialisasi ThemeController sebelum runApp agar tidak ada race condition
+  await ThemeController.instance.initAsync();
+
+  // Pra-inisialisasi PosSyncService agar SharedPreferences sudah siap
+  // sebelum Flutter engine mulai merender (mencegah crash di release build)
+  try {
+    await PosSyncService.instance.ensureInitialized();
+  } catch (_) {}
+
+  // System UI init setelah binding siap (defensive try-catch untuk edge case Android)
+  try {
+    await IOSSystemUi.init();
+  } catch (_) {}
+
   try {
     await initializeDateFormatting('id_ID', null);
   } catch (_) {}

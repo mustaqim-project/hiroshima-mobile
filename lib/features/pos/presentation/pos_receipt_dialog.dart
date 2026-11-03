@@ -5,6 +5,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Colors;
 import 'package:intl/intl.dart';
+import '../../../core/time/wib_time.dart';
 import '../../../core/theme/ios_components.dart';
 import '../../../core/theme/ios_tokens.dart';
 
@@ -230,7 +231,7 @@ class PosReceiptDialog extends StatelessWidget {
                       // 2. INFORMASI STRUK & ORDER TYPE
                       _buildMetaRow(context, 'No. Struk', orderNo, isBoldValue: true),
                       const SizedBox(height: 4),
-                      _buildMetaRow(context, 'Waktu', '${_timeFormat.format(transactionTime)} WIB'),
+                      _buildMetaRow(context, 'Waktu', '${WibTime.format(transactionTime, "dd/MM/yyyy HH:mm")} WIB'),
                       const SizedBox(height: 4),
                       _buildMetaRow(context, 'Kasir', cashierName),
                       const SizedBox(height: 4),
@@ -283,10 +284,24 @@ class PosReceiptDialog extends StatelessWidget {
                       ),
                       const SizedBox(height: 6),
 
-                      for (final item in items) ...[
-                        _buildOrderItemRow(context, item),
-                        const SizedBox(height: 6),
-                      ],
+                      if (items.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Text(
+                            '(Tidak ada rincian item)',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontStyle: FontStyle.italic,
+                              color: IOSColors.secondaryLabel.resolveFrom(context),
+                              decoration: TextDecoration.none,
+                            ),
+                          ),
+                        )
+                      else
+                        for (final item in items) ...[
+                          _buildOrderItemRow(context, item),
+                          const SizedBox(height: 6),
+                        ],
 
                       const SizedBox(height: 6),
                       _buildDashedDivider(context),
@@ -526,7 +541,7 @@ class PosReceiptDialog extends StatelessWidget {
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (ctx, setDialogState) => CupertinoAlertDialog(
-          title: const Text('Otorisasi Void Transaksi (FSD-08)'),
+          title: const Text('Otorisasi Void Transaksi'),
           content: Padding(
             padding: const EdgeInsets.only(top: 10),
             child: Column(
@@ -627,12 +642,17 @@ class PosReceiptDialog extends StatelessWidget {
   }
 
   Widget _buildOrderItemRow(BuildContext context, Map<String, dynamic> item) {
-    final name = item['name'] as String? ?? 'Item';
-    final qty = (item['qty'] as num?)?.toInt() ?? 1;
-    final price = (item['price'] as num?)?.toInt() ?? 0;
-    final itemSubtotal = qty * price;
+    final name = (item['product_name'] ?? item['name']) as String? ?? 'Item';
+    final variantName = item['variant_name'] as String?;
+    final qty = ((item['quantity'] ?? item['qty']) as num?)?.toInt() ?? 1;
+    final price = ((item['unit_price'] ?? item['price']) as num?)?.toInt() ?? 0;
+    final itemSubtotal = (item['subtotal'] as num?)?.toInt() ?? (qty * price);
     final modifiers = (item['modifiers'] as List<dynamic>?) ?? [];
     final notes = item['notes'] as String?;
+
+    final displayName = variantName != null && variantName.isNotEmpty
+        ? '$name ($variantName)'
+        : name;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -643,7 +663,7 @@ class PosReceiptDialog extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                '${qty}x $name',
+                '${qty}x $displayName',
                 style: TextStyle(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w600,
@@ -666,17 +686,21 @@ class PosReceiptDialog extends StatelessWidget {
         ),
         if (modifiers.isNotEmpty)
           for (final m in modifiers) ...[
-            Padding(
-              padding: const EdgeInsets.only(left: 12, top: 1),
-              child: Text(
-                '+ ${m['name']} (${(m['price'] ?? 0) > 0 ? _currency.format(m['price']) : "Gratis"})',
-                style: TextStyle(
-                  fontSize: 10.5,
-                  color: IOSColors.secondaryLabel.resolveFrom(context),
-                  decoration: TextDecoration.none,
+            Builder(builder: (mCtx) {
+              final modName = (m['modifier_name'] ?? m['name']) as String? ?? 'Ekstra';
+              final modPrice = ((m['price'] ?? m['unit_price'] ?? 0) as num).toInt();
+              return Padding(
+                padding: const EdgeInsets.only(left: 12, top: 1),
+                child: Text(
+                  '+ $modName (${modPrice > 0 ? _currency.format(modPrice) : "Gratis"})',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    color: IOSColors.secondaryLabel.resolveFrom(context),
+                    decoration: TextDecoration.none,
+                  ),
                 ),
-              ),
-            ),
+              );
+            }),
           ],
         if (notes != null && notes.isNotEmpty)
           Padding(

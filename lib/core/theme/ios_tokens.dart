@@ -132,7 +132,16 @@ abstract final class IOSText {
 // ───────────────────────── 6. System UI & Theme ─────────────────────────
 abstract final class IOSSystemUi {
   static Future<void> init() async {
-    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    try {
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      await SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+        statusBarColor: Color(0x00000000),
+        systemNavigationBarColor: Color(0x00000000),
+        systemNavigationBarContrastEnforced: false,
+      ));
+    } catch (_) {
+      // Beberapa perangkat Android tidak mendukung edge-to-edge; lanjut tanpa crash
+    }
   }
 
   static SystemUiOverlayStyle styleFor(Brightness brightness) {

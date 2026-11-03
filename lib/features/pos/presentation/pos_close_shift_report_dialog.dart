@@ -8,6 +8,8 @@ import '../../../core/printing/receipt_builder.dart';
 import '../../../core/printing/thermal_printer_service.dart';
 import '../../../core/theme/ios_components.dart';
 import '../../../core/theme/ios_tokens.dart';
+import '../../../core/time/trusted_clock.dart';
+import '../../../core/time/wib_time.dart';
 
 class PosCloseShiftReportDialog extends StatefulWidget {
   final Map<String, dynamic> report;
@@ -101,16 +103,15 @@ class _PosCloseShiftReportDialogState extends State<PosCloseShiftReportDialog> {
 
     final company = (shiftInfo['company_name'] as String?) ?? 'Hiroshima Japanese Street Food';
     final branchName = (shiftInfo['branch_name'] as String?) ?? 'Hiroshima';
-    final cashier = (shiftInfo['cashier_name'] as String?) ?? (shiftInfo['cashier_username'] as String?) ?? 'Kasir';
+    final openedBy = (shiftInfo['opened_by_name'] as String?) ?? (shiftInfo['cashier_name'] as String?) ?? (shiftInfo['cashier_username'] as String?) ?? 'Kasir';
     final shiftId = shiftInfo['shift_id']?.toString() ?? '-';
-    final closeType = (shiftInfo['close_type'] ?? 'manual') == 'auto' ? 'Otomatis (23 Jam)' : 'Manual (Kasir)';
+    final closeType = (shiftInfo['close_type'] ?? 'manual') == 'auto' ? 'Otomatis (15 Jam)' : 'Manual (Kasir)';
 
-    DateTime? openedAt = shiftInfo['opened_at'] != null ? DateTime.tryParse(shiftInfo['opened_at'].toString()) : null;
-    DateTime? closedAt = shiftInfo['closed_at'] != null ? DateTime.tryParse(shiftInfo['closed_at'].toString()) : null;
-    DateTime printedAt = shiftInfo['printed_at'] != null
-        ? (DateTime.tryParse(shiftInfo['printed_at'].toString()) ?? DateTime.now())
-        : DateTime.now();
-
+    DateTime? openedAt = shiftInfo['opened_at'] != null ? WibTime.tryParse(shiftInfo['opened_at']) : null;
+    DateTime? closedAt = shiftInfo['closed_at'] != null ? WibTime.tryParse(shiftInfo['closed_at']) : null;
+    DateTime printedAt = WibTime.tryParse(shiftInfo['printed_at'], TrustedClock().now);
+    final isOpenShift = (shiftInfo['status'] == 'open') || (closedAt == null);
+    final closedBy = (shiftInfo['closed_by_name'] as String?) ?? (isOpenShift ? 'Shift Masih Berjalan' : ((shiftInfo['close_type'] == 'auto') ? 'Sistem (Otomatis 15 Jam)' : openedBy));
     final txCount = txSummary['completed_transaction_count'] ?? 0;
     final gross = (txSummary['gross_sales'] as num?)?.toInt() ?? 0;
     final discount = (txSummary['total_discount'] as num?)?.toInt() ?? 0;
@@ -125,7 +126,6 @@ class _PosCloseShiftReportDialogState extends State<PosCloseShiftReportDialog> {
     final diff = (cashRec['cash_difference'] as num?)?.toInt();
 
     final isDark = CupertinoTheme.of(context).brightness == Brightness.dark;
-    final isOpenShift = (shiftInfo['status'] == 'open') || (closedAt == null);
 
     return Container(
       constraints: const BoxConstraints(maxWidth: 580, maxHeight: 780),
@@ -323,15 +323,17 @@ class _PosCloseShiftReportDialogState extends State<PosCloseShiftReportDialog> {
 
                             // Informasi Shift
                             _buildReceiptRow('Shift ID', '#$shiftId', isBold: true),
-                            _buildReceiptRow('Kasir Bertugas', cashier),
-                            _buildReceiptRow('Waktu Buka', openedAt != null ? '${_dateFormat.format(openedAt)} WIB' : '-'),
-                            if (isOpenShift)
-                              _buildReceiptRow('Status Shift', 'SEDANG BERJALAN', valueColor: const Color(0xFF2563EB), isBold: true)
-                            else
-                              _buildReceiptRow('Waktu Tutup', closedAt != null ? '${_dateFormat.format(closedAt)} WIB' : '-'),
-                            _buildReceiptRow('Waktu Cetak/Preview', '${_dateFormat.format(printedAt)} WIB'),
-                            if (!isOpenShift)
+                            _buildReceiptRow('Buka Shift Oleh', openedBy),
+                            _buildReceiptRow('Waktu Buka', openedAt != null ? '${WibTime.format(openedAt, "dd/MM/yyyy HH:mm")} WIB' : '-'),
+                            if (isOpenShift) ...[
+                              _buildReceiptRow('Status Shift', 'SEDANG BERJALAN', valueColor: const Color(0xFF2563EB), isBold: true),
+                              _buildReceiptRow('Waktu Preview', '${WibTime.format(printedAt, "dd/MM/yyyy HH:mm")} WIB'),
+                            ] else ...[
+                              _buildReceiptRow('Tutup Shift Oleh', closedBy),
+                              _buildReceiptRow('Waktu Tutup', closedAt != null ? '${WibTime.format(closedAt, "dd/MM/yyyy HH:mm")} WIB' : '-'),
                               _buildReceiptRow('Tipe Penutupan', closeType),
+                              _buildReceiptRow('Waktu Cetak', '${WibTime.format(printedAt, "dd/MM/yyyy HH:mm")} WIB'),
+                            ],
                             const SizedBox(height: 10),
                             _buildDashedLine(context),
                             const SizedBox(height: 12),
@@ -550,14 +552,14 @@ class _PosCloseShiftReportDialogState extends State<PosCloseShiftReportDialog> {
                               children: [
                                 Column(
                                   children: [
-                                    Text('Kasir Bertugas,', style: IOSText.caption1),
+                                    Text(isOpenShift ? 'Kasir Buka Shift,' : 'Kasir Tutup Shift,', style: IOSText.caption1),
                                     const SizedBox(height: 40),
-                                    Text('($cashier)', style: IOSText.subhead.copyWith(fontWeight: FontWeight.w600)),
+                                    Text('(${isOpenShift ? openedBy : closedBy})', style: IOSText.subhead.copyWith(fontWeight: FontWeight.w600)),
                                   ],
                                 ),
                                 Column(
                                   children: [
-                                    Text('Supervisor,', style: IOSText.caption1),
+                                    Text('Supervisor / Owner,', style: IOSText.caption1),
                                     const SizedBox(height: 40),
                                     Text('( ____________ )', style: IOSText.subhead.copyWith(fontWeight: FontWeight.w600)),
                                   ],

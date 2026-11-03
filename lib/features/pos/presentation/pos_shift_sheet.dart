@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../../../core/sync/pos_sync_service.dart';
 import '../../../core/theme/ios_components.dart';
 import '../../../core/theme/ios_tokens.dart';
+import '../../../core/time/wib_time.dart';
 import 'pos_close_shift_report_dialog.dart';
 
 class PosShiftSheet extends StatefulWidget {
@@ -108,7 +109,7 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
     }
   }
 
-  Future<void> _handleCloseShift({bool forceCancelUnfinalized = false}) async {
+  Future<void> _handleCloseShift({bool forceCancelUnfinalized = false, bool allowCrossBranch = false}) async {
     final amount = _parsedAmount;
 
     setState(() {
@@ -120,6 +121,7 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
     final res = await PosSyncService.instance.closeShift(
       amount,
       forceCancelUnfinalized: forceCancelUnfinalized,
+      allowCrossBranch: allowCrossBranch,
     );
 
     if (!mounted) return;
@@ -239,10 +241,10 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
                         Expanded(
                           child: Text(
                             isOpen
-                                ? (shift?['is_other_branch'] == true
-                                    ? 'Tutup Shift (${shift?['branch_name'] ?? 'Cabang Lain'})'
-                                    : 'Tutup Shift Kasir')
-                                : 'Buka Shift Kasir Baru',
+                                ? 'Tutup Shift Kasir'
+                                : (syncService.hasCrossBranchActiveShift
+                                    ? 'Shift di ${shift?['branch_name'] ?? 'Cabang Lain'}'
+                                    : 'Buka Shift Kasir Baru'),
                             style: IOSText.title3.copyWith(fontWeight: FontWeight.w700),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -374,7 +376,95 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
               ],
 
               // Content based on shift status
-              if (!isOpen) ...[
+              if (syncService.hasCrossBranchActiveShift) ...[
+                // CROSS BRANCH ACTIVE SHIFT NOTICE & CLOSE
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: CupertinoColors.secondarySystemGroupedBackground.resolveFrom(context),
+                    borderRadius: BorderRadius.circular(IOSRadius.card),
+                    border: Border.all(
+                      color: IOSColors.warning.resolveFrom(context).withValues(alpha: 0.5),
+                      width: 1,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(CupertinoIcons.exclamationmark_circle_fill, color: IOSColors.warning.resolveFrom(context), size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Shift Aktif di ${shift?['branch_name'] ?? 'Cabang Lain'}',
+                              style: IOSText.subhead.copyWith(fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Anda masih memiliki shift yang sedang aktif di cabang ${shift?['branch_name'] ?? 'lain'}. Harap tutup shift tersebut terlebih dahulu sebelum membuka shift baru di cabang ini.',
+                        style: IOSText.footnote.copyWith(
+                          color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _buildInfoRow('Cabang Shift', shift?['branch_name'] ?? 'Cabang Lain', isBold: true),
+                      const SizedBox(height: 6),
+                      if (shift?['opened_at'] != null) ...[
+                        _buildInfoRow('Waktu Buka', WibTime.format(WibTime.tryParse(shift!['opened_at']))),
+                        const SizedBox(height: 6),
+                      ],
+                      _buildInfoRow('Modal Awal', _currency.format((shift?['starting_cash'] as num?)?.toInt() ?? 0)),
+                      const SizedBox(height: 14),
+
+                      Text(
+                        'Masukkan Kas Fisik Akhir di Laci ${shift?['branch_name'] ?? ''}',
+                        style: IOSText.subhead.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 8),
+                      CupertinoTextField(
+                        controller: _cashController,
+                        keyboardType: TextInputType.number,
+                        placeholder: '0',
+                        onChanged: (_) => setState(() {}),
+                        prefix: Padding(
+                          padding: const EdgeInsets.only(left: 12),
+                          child: Text(
+                            'Rp ',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: CupertinoColors.label.resolveFrom(context),
+                            ),
+                          ),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: CupertinoColors.label.resolveFrom(context),
+                        ),
+                        decoration: BoxDecoration(
+                          color: CupertinoColors.tertiarySystemFill.resolveFrom(context),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: IOSSpacing.lg),
+
+                IOSButton(
+                  label: 'Tutup Shift ${shift?['branch_name'] ?? 'Cabang Lain'}',
+                  variant: IOSButtonVariant.filled,
+                  isDestructive: true,
+                  expanded: true,
+                  isLoading: _isLoading,
+                  onPressed: _isLoading ? null : () => _handleCloseShift(allowCrossBranch: true),
+                ),
+              ] else if (!isOpen) ...[
                 // OPEN SHIFT FLOW
                 Container(
                   padding: const EdgeInsets.all(16),
@@ -576,6 +666,14 @@ class _PosShiftSheetState extends State<PosShiftSheet> {
                       ],
                       const SizedBox(height: 10),
 
+                      if ((shift?['opened_by_name'] ?? shift?['cashier_name']) != null && (shift?['opened_by_name'] ?? shift?['cashier_name']).toString().isNotEmpty) ...[
+                        _buildInfoRow('Buka Shift Oleh', (shift?['opened_by_name'] ?? shift?['cashier_name']).toString()),
+                        const SizedBox(height: 6),
+                      ],
+                      if ((PosSyncService.instance.currentUser?['name'] ?? PosSyncService.instance.currentUser?['username']) != null) ...[
+                        _buildInfoRow('Tutup Shift Oleh', (PosSyncService.instance.currentUser?['name'] ?? PosSyncService.instance.currentUser?['username']).toString()),
+                        const SizedBox(height: 6),
+                      ],
                       _buildInfoRow('Modal Awal Kasir', _currency.format((shift?['starting_cash'] as num?)?.toInt() ?? 0)),
                       const SizedBox(height: 6),
                       _buildInfoRow(

@@ -1,8 +1,9 @@
-// @req FR-OFF-01, FR-OFF-02, FR-OFF-03, FR-OFF-04, FR-OFF-05, FR-POS-16, FSD-10
+﻿// @req FR-OFF-01, FR-OFF-02, FR-OFF-03, FR-OFF-04, FR-OFF-05, FR-POS-16, FSD-10
 
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -18,8 +19,18 @@ class PosSyncService extends ChangeNotifier {
   static final PosSyncService instance = PosSyncService._internal();
   factory PosSyncService() => instance;
   PosSyncService._internal() {
-    _initAutoSync();
+    // Konstruktor tidak memulai async langsung (mencegah crash di release APK).
+    // Inisialisasi eksplisit via ensureInitialized() dari main().
     _loadRecentOrdersFromDisk();
+  }
+
+  bool _serviceInitialized = false;
+
+  /// Dipanggil dari main() setelah WidgetsFlutterBinding.ensureInitialized().
+  Future<void> ensureInitialized() async {
+    if (_serviceInitialized) return;
+    _serviceInitialized = true;
+    await _initAutoSync();
   }
 
   static const String _prefKeyBaseUrl = 'hiroshima_pos_api_base_url';
@@ -28,10 +39,14 @@ class PosSyncService extends ChangeNotifier {
   static const String _prefKeyActiveBranch = 'hiroshima_pos_active_branch';
   static const String _prefKeyAccessibleBranches = 'hiroshima_pos_accessible_branches';
   static const String _prefKeyCanSwitchBranch = 'hiroshima_pos_can_switch_branch';
-  static const String _prefKeyCatalogCache = 'hiroshima_pos_catalog_cache_v2';
-  static const String _prefKeyRecentOrdersCache = 'hiroshima_pos_recent_orders_cache_v1';
-  static const String _prefKeyHeldOrdersCache = 'hiroshima_pos_held_orders_cache_v1';
-  static const String _prefKeyCurrentShift = 'hiroshima_pos_current_shift_cache_v1';
+  static const String prefKeyCatalogCache = 'hiroshima_pos_catalog_cache_v2';
+  static const String _prefKeyCatalogCache = prefKeyCatalogCache;
+  static const String prefKeyRecentOrdersCache = 'hiroshima_pos_recent_orders_cache_v1';
+  static const String _prefKeyRecentOrdersCache = prefKeyRecentOrdersCache;
+  static const String prefKeyHeldOrdersCache = 'hiroshima_pos_held_orders_cache_v1';
+  static const String _prefKeyHeldOrdersCache = prefKeyHeldOrdersCache;
+  static const String prefKeyCurrentShift = 'hiroshima_pos_current_shift_cache_v1';
+  static const String _prefKeyCurrentShift = prefKeyCurrentShift;
 
   /// Official production API base URL on hiroshima.web.id
   static const String productionBaseUrl = 'https://hiroshima.web.id/api/v1';
@@ -144,6 +159,16 @@ class PosSyncService extends ChangeNotifier {
     _currentShift = null;
     currentUser = null;
     authToken = '';
+    _localRecentOrders = [];
+    OutboxManager().clearForTesting();
+    try {
+      if (_outboxFile.existsSync()) {
+        _outboxFile.deleteSync();
+      }
+      if (_cacheFile.existsSync()) {
+        _cacheFile.deleteSync();
+      }
+    } catch (_) {}
   }
 
   /// Resolves relative or localhost image URLs to the active production backend
@@ -359,8 +384,17 @@ class PosSyncService extends ChangeNotifier {
     } catch (_) {}
     _currentShift = null;
     await _clearCurrentShiftFromDisk();
+
+    // Strict branch data isolation: reset and reload branch-scoped cached orders & held bills
+    _heldOrders = [];
+    _localRecentOrders = [];
+    await _loadHeldOrdersFromDisk(newBranch['id']);
+    await _loadRecentOrdersFromDisk(newBranch['id']);
+
     notifyListeners();
     await fetchCurrentShift();
+    await fetchHeldOrders();
+    await fetchRecentOrders();
     return await fetchCatalog(branchId: newBranch['id']);
   }
 
@@ -397,10 +431,32 @@ class PosSyncService extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ───────────────────────── Shift Management API ─────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Shift Management API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Map<String, dynamic>? _currentShift;
   Map<String, dynamic>? get currentShift => _currentShift;
-  bool get hasActiveShift => _currentShift != null && _currentShift!['status'] == 'open';
+  bool get hasActiveShift {
+    if (_currentShift == null || _currentShift!['status'] != 'open') return false;
+    final bId = _branch['id'] ?? currentUser?['branch_id'];
+    if (bId != null && _currentShift!['branch_id'] != null) {
+      return _currentShift!['branch_id'].toString() == bId.toString();
+    }
+    return true;
+  }
+
+  bool get hasCrossBranchActiveShift {
+    if (_currentShift == null || _currentShift!['status'] != 'open') return false;
+    final bId = _branch['id'] ?? currentUser?['branch_id'];
+    if (bId != null && _currentShift!['branch_id'] != null) {
+      return _currentShift!['branch_id'].toString() != bId.toString();
+    }
+    return false;
+  }
+
+  @visibleForTesting
+  void setMockCurrentShift(Map<String, dynamic>? shift) {
+    _currentShift = shift;
+    notifyListeners();
+  }
 
   Future<void> _saveCurrentShiftToDisk(Map<String, dynamic>? shift) async {
     try {
@@ -557,9 +613,15 @@ class PosSyncService extends ChangeNotifier {
     }
   }
 
-  Future<Map<String, dynamic>> closeShift(int actualCash, {bool forceCancelUnfinalized = false}) async {
+  Future<Map<String, dynamic>> closeShift(
+    int actualCash, {
+    bool forceCancelUnfinalized = false,
+    bool allowCrossBranch = false,
+  }) async {
     try {
-      final targetBranchId = _branch['id'] ?? currentUser?['branch_id'];
+      final targetBranchId = (allowCrossBranch && _currentShift?['branch_id'] != null)
+          ? _currentShift!['branch_id']
+          : (_branch['id'] ?? currentUser?['branch_id']);
       final uri = Uri.parse('$baseUrl/shifts/close');
       final headers = <String, String>{
         'Content-Type': 'application/json',
@@ -684,17 +746,24 @@ class PosSyncService extends ChangeNotifier {
         totalCashFromSales += tot;
       } else {
         for (final p in payments) {
-          final mName = (p['payment_method_name'] ?? p['method'] ?? 'Tunai').toString();
+          final mName = (p['payment_method_name_snapshot'] 
+              ?? p['payment_method_name'] 
+              ?? p['payment_method']?['name'] 
+              ?? p['method'] 
+              ?? 'Tunai').toString();
           final amt = (p['amount'] as num?)?.toInt() ?? tot;
           paymentMap[mName] = (paymentMap[mName] ?? 0) + amt;
-          if (mName.toLowerCase().contains('tunai') || mName.toLowerCase().contains('cash')) {
+          final isExplicitCash = p['is_cash'] == true || (p['payment_method'] is Map && p['payment_method']['is_cash'] == true);
+          final isExplicitNonCash = p['is_cash'] == false || (p['payment_method'] is Map && p['payment_method']['is_cash'] == false) || mName.toLowerCase().contains('qris');
+          final isCash = isExplicitCash || (!isExplicitNonCash && (mName.toLowerCase().contains('tunai') || mName.toLowerCase().contains('cash')));
+          if (isCash) {
             totalCashFromSales += amt;
           }
         }
       }
     }
 
-    final expCash = startCash + totalCashFromSales;
+    final expCash = math.max(0, startCash + totalCashFromSales);
     final diff = actualCash - expCash;
 
     final menuList = menuMap.values.toList();
@@ -703,6 +772,7 @@ class PosSyncService extends ChangeNotifier {
     }
 
     final paymentsList = paymentMap.entries.map((e) => {
+      'name': e.key,
       'payment_method_name': e.key,
       'total_amount': e.value,
     }).toList();
@@ -786,11 +856,11 @@ class PosSyncService extends ChangeNotifier {
     return null;
   }
 
-  // ───────────────────────── Hold Bill API ─────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Hold Bill API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   Future<Map<String, dynamic>> holdOrder(Map<String, dynamic> payload) async {
+    final targetBranchId = _branch['id'] ?? currentUser?['branch_id'];
     try {
-      final targetBranchId = _branch['id'] ?? currentUser?['branch_id'];
       final uri = Uri.parse('$baseUrl/orders/hold');
       final headers = <String, String>{
         'Content-Type': 'application/json',
@@ -823,6 +893,7 @@ class PosSyncService extends ChangeNotifier {
       final localId = DateTime.now().millisecondsSinceEpoch;
       final localOrder = {
         'id': localId,
+        'branch_id': payload['branch_id'] ?? targetBranchId,
         'order_no': 'OFF-HOLD-${localId.toString().substring(7)}',
         'table_id': payload['table_id'],
         'order_type_id': payload['order_type_id'],
@@ -835,15 +906,15 @@ class PosSyncService extends ChangeNotifier {
         'is_offline_hold': true,
       };
       _heldOrders.insert(0, localOrder);
-      _saveHeldOrdersToDisk();
+      _saveHeldOrdersToDisk(targetBranchId);
       notifyListeners();
       return {'success': true, 'order': localOrder, 'offline': true};
     }
   }
 
   Future<List<Map<String, dynamic>>> fetchHeldOrders() async {
+    final targetBranchId = _branch['id'] ?? currentUser?['branch_id'];
     try {
-      final targetBranchId = _branch['id'] ?? currentUser?['branch_id'];
       String heldUrl = '$baseUrl/orders/held';
       if (targetBranchId != null) {
         heldUrl += '?branch_id=$targetBranchId';
@@ -884,7 +955,11 @@ class PosSyncService extends ChangeNotifier {
         notifyListeners();
         return _heldOrders;
       }
-    } catch (_) {}
+    } catch (_) {
+      if (targetBranchId != null) {
+        _heldOrders = _heldOrders.where((o) => o['branch_id'] == null || o['branch_id'].toString() == targetBranchId.toString()).toList();
+      }
+    }
     return _heldOrders;
   }
 
@@ -1012,28 +1087,39 @@ class PosSyncService extends ChangeNotifier {
     }
   }
 
-  Future<void> _loadHeldOrdersFromDisk() async {
+  Future<void> _loadHeldOrdersFromDisk([dynamic branchId]) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final str = prefs.getString(_prefKeyHeldOrdersCache);
+      final bId = branchId ?? _branch['id'] ?? currentUser?['branch_id'];
+      String? str;
+      if (bId != null) {
+        str = prefs.getString('${_prefKeyHeldOrdersCache}_branch_$bId');
+      } else {
+        str = prefs.getString(_prefKeyHeldOrdersCache);
+      }
+      _heldOrders = [];
       if (str != null && str.isNotEmpty) {
         final list = jsonDecode(str) as List<dynamic>;
         final loaded = list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-        final existingIds = _heldOrders.map((o) => o['id']).toSet();
         for (final item in loaded) {
-          if (!existingIds.contains(item['id'])) {
+          if (bId == null || item['branch_id'] == null || item['branch_id'].toString() == bId.toString()) {
             _heldOrders.add(item);
           }
         }
-        notifyListeners();
       }
+      notifyListeners();
     } catch (_) {}
   }
 
-  void _saveHeldOrdersToDisk() async {
+  void _saveHeldOrdersToDisk([dynamic branchId]) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_prefKeyHeldOrdersCache, jsonEncode(_heldOrders));
+      final dataStr = jsonEncode(_heldOrders);
+      await prefs.setString(_prefKeyHeldOrdersCache, dataStr);
+      final bId = branchId ?? _branch['id'] ?? currentUser?['branch_id'];
+      if (bId != null) {
+        await prefs.setString('${_prefKeyHeldOrdersCache}_branch_$bId', dataStr);
+      }
     } catch (_) {}
   }
 
@@ -1071,13 +1157,21 @@ class PosSyncService extends ChangeNotifier {
   }
 
   /// Load cached recent orders from SharedPreferences
-  Future<void> _loadRecentOrdersFromDisk() async {
+  Future<void> _loadRecentOrdersFromDisk([dynamic branchId]) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final str = prefs.getString(_prefKeyRecentOrdersCache);
+      final bId = branchId ?? _branch['id'] ?? currentUser?['branch_id'];
+      String? str;
+      if (bId != null) {
+        str = prefs.getString('${_prefKeyRecentOrdersCache}_branch_$bId');
+      } else {
+        str = prefs.getString(_prefKeyRecentOrdersCache);
+      }
       if (str != null && str.isNotEmpty) {
         final list = jsonDecode(str) as List<dynamic>;
         _localRecentOrders = list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      } else {
+        _localRecentOrders = [];
       }
     } catch (_) {
       // In isolated tests without binding, keep empty list gracefully
@@ -1085,10 +1179,15 @@ class PosSyncService extends ChangeNotifier {
   }
 
   /// Save recent orders to SharedPreferences
-  void _saveRecentOrdersToDisk() async {
+  void _saveRecentOrdersToDisk([dynamic branchId]) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_prefKeyRecentOrdersCache, jsonEncode(_localRecentOrders.take(100).toList()));
+      final dataStr = jsonEncode(_localRecentOrders.take(100).toList());
+      await prefs.setString(_prefKeyRecentOrdersCache, dataStr);
+      final bId = branchId ?? _branch['id'] ?? currentUser?['branch_id'];
+      if (bId != null) {
+        await prefs.setString('${_prefKeyRecentOrdersCache}_branch_$bId', dataStr);
+      }
     } catch (e) {
       debugPrint('[PosSyncService] Error saving recent orders to disk: $e');
     }
@@ -1109,6 +1208,7 @@ class PosSyncService extends ChangeNotifier {
       'service_charge_amount': payload['service_charge_amount'] ?? 0,
       'paid_amount': payload['paid_amount'] ?? payload['total_amount'] ?? 0,
       'change_amount': payload['change_amount'] ?? 0,
+      'branch_id': payload['branch_id'] ?? _branch['id'] ?? currentUser?['branch_id'],
       'table_no': payload['table_no'] ?? (payload['table'] is Map ? payload['table']['table_no'] : null),
       'table': payload['table'] is Map
           ? payload['table']
@@ -1154,15 +1254,22 @@ class PosSyncService extends ChangeNotifier {
   }
 
   /// Fetch recent completed & voided orders for active shift / branch (Offline-First resilient)
-  Future<List<Map<String, dynamic>>> fetchRecentOrders() async {
-    if (_localRecentOrders.isEmpty) {
-      await _loadRecentOrdersFromDisk();
+  Future<List<Map<String, dynamic>>> fetchRecentOrders({bool forceRefresh = false}) async {
+    final targetBranchId = _branch['id'] ??
+        currentUser?['branch_id'] ??
+        (_accessibleBranches.isNotEmpty ? _accessibleBranches.first['id'] : null);
+    if (_localRecentOrders.isEmpty || forceRefresh) {
+      await _loadRecentOrdersFromDisk(targetBranchId);
     }
 
-    // Merge in-flight outbox items if not yet recorded
+    // Merge in-flight outbox items if not yet recorded (isolated to current branch)
     final pendingOutbox = OutboxManager().getPendingItems(limit: 50);
     for (final item in pendingOutbox) {
       final p = item.payload;
+      final itemBranchId = p['branch_id'] ?? targetBranchId;
+      if (targetBranchId != null && itemBranchId != null && itemBranchId.toString() != targetBranchId.toString()) {
+        continue;
+      }
       if (!_localRecentOrders.any((o) => o['uuid'] == item.uuid || o['order_no'] == item.orderNo)) {
         _localRecentOrders.add({
           'id': item.uuid,
@@ -1221,7 +1328,11 @@ class PosSyncService extends ChangeNotifier {
               _localRecentOrders.add(serverOrder);
             }
           }
-          _saveRecentOrdersToDisk();
+          final targetBranchId = _branch['id'] ??
+              currentUser?['branch_id'] ??
+              (_accessibleBranches.isNotEmpty ? _accessibleBranches.first['id'] : null);
+          _saveRecentOrdersToDisk(targetBranchId);
+          notifyListeners();
         }
       }
     } catch (e) {
@@ -1320,6 +1431,73 @@ class PosSyncService extends ChangeNotifier {
     }
   }
 
+  /// Comprehensive bidirectional sync between mobile and backend
+  /// Pushes all offline transactions/outbox to backend, then pulls fresh
+  /// catalog, current shift, held orders, and recent transactions,
+  /// persisting all caches to disk so nothing is lost or out-of-sync.
+  Future<Map<String, dynamic>> syncAll({bool forceRefresh = true}) async {
+    _isSyncing = true;
+    _statusMessage = 'Menyinkronkan data dengan backend...';
+    notifyListeners();
+
+    int pushedCount = 0;
+
+    try {
+      // 1. PUSH: Kirim antrean transaksi offline ke backend terlebih dahulu
+      final initialQueue = OutboxManager().queueSize;
+      if (initialQueue > 0) {
+        await flushOutbox();
+        pushedCount = initialQueue - OutboxManager().queueSize;
+      }
+
+      final targetBranchId = _branch['id'] ?? currentUser?['branch_id'];
+
+      // 2. PULL: Tarik katalog produk, kategori, modifier, meja, dan pengaturan (/sync/pull)
+      final catalogOk = await fetchCatalog(branchId: targetBranchId);
+
+      // 3. PULL: Tarik status shift aktif terkini dan rekonsiliasi kas (/shifts/current)
+      await fetchCurrentShift();
+
+      // 4. PULL: Tarik daftar open bill / pesanan tertahan (/orders/held)
+      await fetchHeldOrders();
+
+      // 5. PULL: Tarik riwayat transaksi selesai dan void terkini (/orders/recent)
+      await fetchRecentOrders(forceRefresh: forceRefresh);
+
+      _isOnline = catalogOk;
+      _lastSyncTime = DateTime.now();
+      _statusMessage = _isOnline ? 'Data & cache tersinkronisasi (Online)' : 'Mode Offline';
+      _isSyncing = false;
+      notifyListeners();
+
+      return {
+        'success': _isOnline,
+        'pushed_orders': pushedCount,
+        'has_active_shift': hasActiveShift,
+        'held_count': _heldOrders.length,
+        'recent_orders_count': _localRecentOrders.length,
+        'is_online': _isOnline,
+        'message': _isOnline
+            ? (pushedCount > 0
+                ? '$pushedCount transaksi offline berhasil dikirim. Semua data & cache backend telah diperbarui.'
+                : 'Semua data dan cache berhasil disinkronkan dengan server.')
+            : 'Gagal terhubung ke backend. Data tersimpan di cache lokal.',
+      };
+    } catch (e) {
+      debugPrint('[PosSyncService] syncAll error: $e');
+      _isSyncing = false;
+      _isOnline = false;
+      _statusMessage = 'Sinkronisasi gagal (Mode Offline)';
+      notifyListeners();
+      return {
+        'success': false,
+        'pushed_orders': pushedCount,
+        'is_online': false,
+        'message': 'Gagal menyinkronkan data: $e',
+      };
+    }
+  }
+
   int _syncTickCount = 0;
 
   /// Start background auto-sync timer
@@ -1350,10 +1528,15 @@ class PosSyncService extends ChangeNotifier {
   }
 
   /// Load catalog from local disk cache / SharedPreferences
-  Future<bool> _loadCacheFromDisk() async {
+  Future<bool> _loadCacheFromDisk([int? forBranchId]) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final content = prefs.getString(_prefKeyCatalogCache);
+      final bId = forBranchId ?? _branch['id'];
+      String? content;
+      if (bId != null) {
+        content = prefs.getString('${prefKeyCatalogCache}_branch_$bId');
+      }
+      content ??= prefs.getString(_prefKeyCatalogCache);
       if (content != null && content.isNotEmpty) {
         final json = jsonDecode(content) as Map<String, dynamic>;
         _applyCatalogData(json);
@@ -1384,6 +1567,10 @@ class PosSyncService extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_prefKeyCatalogCache, str);
+      final bId = _branch['id'] ?? data['branch']?['id'];
+      if (bId != null) {
+        await prefs.setString('${prefKeyCatalogCache}_branch_$bId', str);
+      }
     } catch (_) {}
 
     try {
@@ -1431,8 +1618,9 @@ class PosSyncService extends ChangeNotifier {
     _isSyncing = true;
     notifyListeners();
 
+    final targetBranchId = branchId ?? _branch['id'] ?? currentUser?['branch_id'];
+
     try {
-      final targetBranchId = branchId ?? _branch['id'] ?? currentUser?['branch_id'];
       String pullUrl = '$baseUrl/sync/pull';
       if (targetBranchId != null) {
         pullUrl += '?branch_id=$targetBranchId';
@@ -1478,7 +1666,10 @@ class PosSyncService extends ChangeNotifier {
       _isOnline = false;
       _statusMessage = 'Mode Offline (Menggunakan cache lokal)';
       // Fallback to cache if available
-      _loadCacheFromDisk();
+      final parsedBranchId = targetBranchId is int
+          ? targetBranchId
+          : (targetBranchId != null ? int.tryParse(targetBranchId.toString()) : null);
+      _loadCacheFromDisk(parsedBranchId);
       _isSyncing = false;
       notifyListeners();
       return false;
@@ -1489,7 +1680,11 @@ class PosSyncService extends ChangeNotifier {
   void applyCatalogDataForTesting(Map<String, dynamic> data) => _applyCatalogData(data);
 
   void _applyCatalogData(Map<String, dynamic> data) {
-    _branch = (data['branch'] as Map<String, dynamic>?) ?? {};
+    if (data['branch'] != null && (data['branch'] as Map).isNotEmpty) {
+      if (_branch.isEmpty || _branch['id'] == data['branch']['id']) {
+        _branch = Map<String, dynamic>.from(data['branch'] as Map);
+      }
+    }
     _categories = ((data['categories'] as List<dynamic>?) ?? [])
         .map((e) => e as Map<String, dynamic>)
         .toList();

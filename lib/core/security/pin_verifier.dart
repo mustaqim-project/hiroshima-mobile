@@ -1,6 +1,7 @@
 // @req FSD-07, FSD-08, FSD-12
 
 import 'package:mobile/core/time/trusted_clock.dart';
+import 'package:mobile/core/time/wib_time.dart';
 
 class PinVerificationResult {
   final bool success;
@@ -40,7 +41,7 @@ class PinVerifier {
     required String pinType, // 'void' or 'discount'
   }) {
     if (isLocked()) {
-      final formatted = "${_lockedUntil!.hour.toString().padLeft(2, '0')}:${_lockedUntil!.minute.toString().padLeft(2, '0')}";
+      final formatted = '${WibTime.format(_lockedUntil, "HH:mm")} WIB';
       return PinVerificationResult(
         success: false,
         message: 'Input PIN terkunci selama 15 menit karena 5 kali kesalahan beruntun. Coba lagi setelah $formatted.',
@@ -72,7 +73,7 @@ class PinVerifier {
     if (_failedAttempts >= 5) {
       _lockedUntil = TrustedClock().now.add(const Duration(minutes: 15));
       _failedAttempts = 0;
-      final formatted = "${_lockedUntil!.hour.toString().padLeft(2, '0')}:${_lockedUntil!.minute.toString().padLeft(2, '0')}";
+      final formatted = '${WibTime.format(_lockedUntil, "HH:mm")} WIB';
       return PinVerificationResult(
         success: false,
         message: 'Batas 5 kali percobaan PIN terlampaui. Input PIN dikunci selama 15 menit (hingga $formatted).',

@@ -1,6 +1,8 @@
 // @req FR-POS-17, FR-PRN-01, FR-PRN-02, FR-PRN-03, FSD-14
 
 import 'package:intl/intl.dart';
+import 'package:mobile/core/time/trusted_clock.dart';
+import 'package:mobile/core/time/wib_time.dart';
 
 /// ReceiptBuilder creates ESC/POS byte commands or text representation for thermal printer.
 /// Enforces dual-copy printing: Rangkap 1 (Customer) and Rangkap 2 (Dapur/Bar without prices).
@@ -29,7 +31,7 @@ class ReceiptBuilder {
     bool isDuplicateCopy = false,
   }) {
     final buffer = StringBuffer();
-    final timeStr = DateFormat('dd/MM/yyyy HH:mm').format(transactionTime);
+    final timeStr = WibTime.format(transactionTime, 'dd/MM/yyyy HH:mm');
 
     // 1. LOGO LANDSCAPE HIROSHIMA
     buffer.writeln('================================');
@@ -147,7 +149,7 @@ class ReceiptBuilder {
     bool isAdditionalItemsOnly = false,
   }) {
     final buffer = StringBuffer();
-    final timeStr = DateFormat('HH:mm:ss').format(transactionTime);
+    final timeStr = WibTime.format(transactionTime, 'HH:mm:ss');
 
     buffer.writeln('================================');
     if (isAdditionalItemsOnly) {
@@ -217,35 +219,34 @@ class ReceiptBuilder {
 
     final company = (shiftInfo['company_name'] as String?) ?? 'Hiroshima Japanese Street Food';
     final branchName = (shiftInfo['branch_name'] as String?) ?? 'Hiroshima';
-    final cashier = (shiftInfo['cashier_name'] as String?) ?? (shiftInfo['cashier_username'] as String?) ?? 'Kasir';
+    final openedBy = (shiftInfo['opened_by_name'] as String?) ?? (shiftInfo['cashier_name'] as String?) ?? (shiftInfo['cashier_username'] as String?) ?? 'Kasir';
     final shiftId = shiftInfo['shift_id']?.toString() ?? '-';
-    final closeType = (shiftInfo['close_type'] ?? 'manual') == 'auto' ? 'OTOMATIS (23 JAM)' : 'MANUAL (KASIR)';
+    final closeType = (shiftInfo['close_type'] ?? 'manual') == 'auto' ? 'OTOMATIS (15 JAM)' : 'MANUAL (KASIR)';
 
-    DateTime? openedAt = shiftInfo['opened_at'] != null ? DateTime.tryParse(shiftInfo['opened_at'].toString()) : null;
-    DateTime? closedAt = shiftInfo['closed_at'] != null ? DateTime.tryParse(shiftInfo['closed_at'].toString()) : null;
-    DateTime printedAt = shiftInfo['printed_at'] != null ? (DateTime.tryParse(shiftInfo['printed_at'].toString()) ?? DateTime.now()) : DateTime.now();
-
-    final df = DateFormat('dd/MM/yyyy HH:mm');
+    DateTime? openedAt = shiftInfo['opened_at'] != null ? WibTime.tryParse(shiftInfo['opened_at']) : null;
+    DateTime? closedAt = shiftInfo['closed_at'] != null ? WibTime.tryParse(shiftInfo['closed_at']) : null;
+    DateTime printedAt = WibTime.tryParse(shiftInfo['printed_at'], TrustedClock().now);
+    final isOpen = (shiftInfo['status'] == 'open') || (closedAt == null);
+    final closedBy = (shiftInfo['closed_by_name'] as String?) ?? (isOpen ? 'Shift Berjalan' : ((shiftInfo['close_type'] == 'auto') ? 'Sistem (Auto 15h)' : openedBy));
 
     buffer.writeln('================================');
     buffer.writeln('   $company   ');
     buffer.writeln('   Outlet: $branchName   ');
     buffer.writeln('================================');
-    final isOpen = (shiftInfo['status'] == 'open') || (closedAt == null);
     buffer.writeln(isOpen ? '*** RINGKASAN SHIFT (X-REPORT) ***' : '*** LAPORAN TUTUP SHIFT (CLOSE) ***');
     buffer.writeln('--------------------------------');
     buffer.writeln('Shift ID   : #$shiftId');
-    buffer.writeln('Kasir      : $cashier');
-    buffer.writeln('Waktu Buka : ${openedAt != null ? df.format(openedAt) : "-"} WIB');
+    buffer.writeln('Kasir      : $openedBy');
+    buffer.writeln('Buka Oleh  : $openedBy');
+    buffer.writeln('Waktu Buka : ${openedAt != null ? WibTime.format(openedAt, "dd/MM/yyyy HH:mm") : "-"} WIB');
     if (isOpen) {
       buffer.writeln('Status     : SHIFT BERJALAN');
     } else {
-      buffer.writeln('Waktu Tutup: ${closedAt != null ? df.format(closedAt) : "-"} WIB');
-    }
-    buffer.writeln('Waktu Cetak: ${df.format(printedAt)} WIB');
-    if (!isOpen) {
+      buffer.writeln('Tutup Oleh : $closedBy');
+      buffer.writeln('Waktu Tutup: ${closedAt != null ? WibTime.format(closedAt, "dd/MM/yyyy HH:mm") : "-"} WIB');
       buffer.writeln('Tipe Tutup : $closeType');
     }
+    buffer.writeln('Waktu Cetak: ${WibTime.format(printedAt, "dd/MM/yyyy HH:mm")} WIB');
     buffer.writeln('================================');
     buffer.writeln('    REKAP PENJUALAN PER MENU    ');
     buffer.writeln('--------------------------------');
@@ -335,8 +336,10 @@ class ReceiptBuilder {
 
     buffer.writeln('================================');
     buffer.writeln('\n');
-    buffer.writeln('Kasir Bertugas,       Supervisor,\n\n\n');
-    buffer.writeln('( $cashier )        ( __________ )\n');
+    final cashierSignTitle = isOpen ? 'Kasir Buka Shift,' : 'Kasir Tutup Shift,';
+    final cashierSignName = isOpen ? openedBy : closedBy;
+    buffer.writeln('${cashierSignTitle.padRight(20)} Supervisor,\n\n\n');
+    buffer.writeln('( $cashierSignName )        ( __________ )\n');
     buffer.writeln('================================');
     buffer.writeln('\n\n\n[CUT]\n');
 

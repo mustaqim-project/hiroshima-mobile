@@ -10,7 +10,9 @@ import '../../../core/theme/ios_adaptive.dart';
 import '../../../core/theme/ios_components.dart';
 import '../../../core/theme/ios_tokens.dart';
 import '../../../core/theme/theme_controller.dart';
+import '../../../core/update/app_update_service.dart';
 import '../../pos/presentation/pos_tablet_screen.dart';
+import '../../pos/presentation/pos_update_dialog.dart';
 
 enum LoginMode { pin, email }
 
@@ -39,14 +41,24 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
   @override
   void initState() {
     super.initState();
+    AppUpdateService.instance.init();
+    AppUpdateService.instance.addListener(_onUpdateChange);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AppUpdateService.instance.checkForUpdate();
+    });
   }
 
   @override
   void dispose() {
+    AppUpdateService.instance.removeListener(_onUpdateChange);
     _usernameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  void _onUpdateChange() {
+    if (mounted) setState(() {});
   }
 
   void _onKeyPress(String val) {
@@ -726,6 +738,11 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
 
   Widget _buildFooterInfo() {
     final appName = PosSyncService.instance.appName;
+    final updateService = AppUpdateService.instance;
+    final currentVer = updateService.currentVersion;
+    final currentBuild = updateService.currentBuildNumber;
+    final hasUpdate = updateService.hasUpdate;
+
     return Column(
       children: [
         Text(
@@ -739,6 +756,53 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
           'Mode Offline-First · Enkripsi Argon2id',
           style: IOSText.caption2.copyWith(
             color: CupertinoColors.tertiaryLabel.resolveFrom(context),
+          ),
+        ),
+        const SizedBox(height: 8),
+        CupertinoButton(
+          padding: EdgeInsets.zero,
+          onPressed: () => PosUpdateDialog.show(context, forceCheck: true),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: hasUpdate
+                  ? CupertinoColors.activeGreen.withValues(alpha: 0.12)
+                  : CupertinoColors.tertiarySystemFill.resolveFrom(context),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: hasUpdate
+                    ? CupertinoColors.activeGreen.withValues(alpha: 0.5)
+                    : CupertinoColors.separator.resolveFrom(context).withValues(alpha: 0.3),
+                width: 0.8,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  hasUpdate
+                      ? CupertinoIcons.arrow_down_circle_fill
+                      : CupertinoIcons.info_circle,
+                  size: 13,
+                  color: hasUpdate
+                      ? CupertinoColors.activeGreen
+                      : CupertinoColors.secondaryLabel.resolveFrom(context),
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  hasUpdate
+                      ? 'v$currentVer ($currentBuild) • Update Tersedia!'
+                      : 'v$currentVer ($currentBuild) • Cek Update',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: hasUpdate ? FontWeight.w600 : FontWeight.normal,
+                    color: hasUpdate
+                        ? CupertinoColors.activeGreen
+                        : CupertinoColors.secondaryLabel.resolveFrom(context),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ],

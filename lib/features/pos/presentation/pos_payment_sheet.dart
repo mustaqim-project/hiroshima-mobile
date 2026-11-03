@@ -10,6 +10,7 @@ import '../../../../core/pricing/order_calculator.dart';
 import '../../../../core/printing/thermal_printer_service.dart';
 import '../../../../core/sync/pos_sync_service.dart';
 import '../../../../core/time/trusted_clock.dart';
+import '../../../../core/time/wib_time.dart';
 import '../../../../core/theme/ios_tokens.dart';
 import '../../../../core/theme/ios_components.dart';
 import 'pos_receipt_dialog.dart';
@@ -83,7 +84,14 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
     if (methods.isNotEmpty) {
       _selectedPaymentMethod = methods.first;
     } else {
-      _selectedPaymentMethod = {'id': 1, 'name': 'Tunai', 'code': 'CASH'};
+      _selectedPaymentMethod = {
+        'id': 1,
+        'name': 'Tunai (Cash)',
+        'code': 'cash',
+        'type': 'cash',
+        'is_cash': true,
+        'is_active': true,
+      };
     }
 
     _cashGiven = widget.calculation.totalAmount;
@@ -96,9 +104,16 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
     super.dispose();
   }
 
-  bool get _isCash =>
-      (_selectedPaymentMethod['code'] ?? _selectedPaymentMethod['name'] ?? '').toString().toLowerCase().contains('cash') ||
-      (_selectedPaymentMethod['name'] ?? '').toString().toLowerCase().contains('tunai');
+  bool get _isCash {
+    if (_selectedPaymentMethod['is_cash'] == false) return false;
+    if (_selectedPaymentMethod['is_cash'] == true) return true;
+    final code = (_selectedPaymentMethod['code'] ?? '').toString().toLowerCase();
+    final type = (_selectedPaymentMethod['type'] ?? '').toString().toLowerCase();
+    final name = (_selectedPaymentMethod['name'] ?? '').toString().toLowerCase();
+    if (code.contains('qris') || type.contains('qris') || name.contains('qris')) return false;
+    if (code.contains('debit') || code.contains('credit') || code.contains('edc') || code.contains('transfer')) return false;
+    return code.contains('cash') || type.contains('cash') || name.contains('tunai') || name.contains('cash');
+  }
 
   int get _changeAmount => _isCash ? (_cashGiven - widget.calculation.totalAmount) : 0;
   bool get _canSubmit => !_isCash || (_cashGiven >= widget.calculation.totalAmount);
@@ -150,7 +165,7 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
       'order_type_id': widget.orderTypeId,
       'table_id': widget.tableNo != null ? int.tryParse(widget.tableNo!) : null,
       'resumed_order_id': widget.resumedOrderId,
-      'client_created_at': transactionTime.toIso8601String(),
+      'client_created_at': WibTime.toIso8601String(transactionTime),
       'subtotal': calc.subtotal,
       'promo_discount_amount': calc.promoDiscount,
       'voucher_discount_amount': calc.voucherDiscount,
@@ -191,9 +206,20 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
       }).toList(),
       'payments': [
         {
-          'payment_method_id': _selectedPaymentMethod['id'] ?? 1,
-          'payment_method_name': _selectedPaymentMethod['name'] ?? 'Tunai (Cash)',
+          'payment_method_id': _selectedPaymentMethod['id'] ?? (_isCash ? 1 : 2),
+          'payment_method_name': _selectedPaymentMethod['name'] ?? (_isCash ? 'Tunai (Cash)' : 'QRIS'),
+          'payment_method_name_snapshot': _selectedPaymentMethod['name'] ?? (_isCash ? 'Tunai (Cash)' : 'QRIS'),
+          'method': _selectedPaymentMethod['name'] ?? (_isCash ? 'Tunai (Cash)' : 'QRIS'),
+          'type': _selectedPaymentMethod['type'] ?? (_isCash ? 'cash' : 'qris_static'),
+          'is_cash': _isCash,
           'amount': _isCash ? _cashGiven : calc.totalAmount,
+          'payment_method': {
+            'id': _selectedPaymentMethod['id'] ?? (_isCash ? 1 : 2),
+            'name': _selectedPaymentMethod['name'] ?? (_isCash ? 'Tunai (Cash)' : 'QRIS'),
+            'code': _selectedPaymentMethod['code'] ?? (_isCash ? 'cash' : 'qris_static'),
+            'type': _selectedPaymentMethod['type'] ?? (_isCash ? 'cash' : 'qris_static'),
+            'is_cash': _isCash,
+          },
         }
       ],
     };
@@ -274,6 +300,11 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
     if (!mounted) return;
     setState(() => _isProcessing = false);
 
+    // Snapshot receipt items BEFORE onPaymentSuccess clears widget.cart
+    final receiptItems = List<Map<String, dynamic>>.from(
+      widget.cart.map((item) => Map<String, dynamic>.from(item)),
+    );
+
     // Close payment modal
     Navigator.pop(context);
     widget.onPaymentSuccess();
@@ -291,7 +322,7 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
         orderTypeName: widget.orderType,
         cashierName: cashierName,
         transactionTime: transactionTime,
-        items: widget.cart,
+        items: receiptItems,
         subtotal: calc.subtotal,
         totalDiscount: calc.totalDiscount,
         serviceChargeAmount: calc.serviceChargeAmount,
@@ -330,7 +361,7 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
               orderTypeName: widget.orderType,
               cashierName: cashierName,
               transactionTime: transactionTime,
-              items: widget.cart,
+              items: receiptItems,
               subtotal: calc.subtotal,
               totalDiscount: calc.totalDiscount,
               serviceChargeAmount: calc.serviceChargeAmount,
@@ -357,7 +388,7 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
               orderTypeName: widget.orderType,
               cashierName: cashierName,
               transactionTime: transactionTime,
-              items: widget.cart,
+              items: receiptItems,
               subtotal: calc.subtotal,
               totalDiscount: calc.totalDiscount,
               serviceChargeAmount: calc.serviceChargeAmount,
@@ -503,8 +534,22 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
                         final isDark = Theme.of(ctx).brightness == Brightness.dark;
                         final methods = paymentMethods.isEmpty
                             ? [
-                                {'id': 1, 'name': 'Tunai (Cash)', 'code': 'CASH'},
-                                {'id': 2, 'name': 'QRIS', 'code': 'QRIS'},
+                                {
+                                  'id': 1,
+                                  'name': 'Tunai (Cash)',
+                                  'code': 'cash',
+                                  'type': 'cash',
+                                  'is_cash': true,
+                                  'is_active': true,
+                                },
+                                {
+                                  'id': 2,
+                                  'name': 'QRIS',
+                                  'code': 'qris_static',
+                                  'type': 'qris_static',
+                                  'is_cash': false,
+                                  'is_active': true,
+                                },
                               ]
                             : paymentMethods;
 
