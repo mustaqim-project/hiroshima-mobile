@@ -134,7 +134,7 @@ abstract final class IOSSystemUi {
   static Future<void> init() async {
     try {
       await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-      await SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+      SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
         statusBarColor: Color(0x00000000),
         systemNavigationBarColor: Color(0x00000000),
         systemNavigationBarContrastEnforced: false,

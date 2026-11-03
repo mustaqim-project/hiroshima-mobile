@@ -16,7 +16,9 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Inisialisasi ThemeController sebelum runApp agar tidak ada race condition
-  await ThemeController.instance.initAsync();
+  try {
+    await ThemeController.instance.initAsync();
+  } catch (_) {}
 
   // Pra-inisialisasi PosSyncService agar SharedPreferences sudah siap
   // sebelum Flutter engine mulai merender (mencegah crash di release build)

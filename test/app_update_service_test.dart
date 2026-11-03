@@ -14,8 +14,8 @@ void main() {
     });
 
     test('Initial state has default version and no pending update', () {
-      expect(service.currentVersion, '1.0.2');
-      expect(service.currentBuildNumber, '3');
+      expect(service.currentVersion, '1.0.5');
+      expect(service.currentBuildNumber, '6');
       expect(service.hasUpdate, false);
       expect(service.isDownloading, false);
       expect(service.isChecking, false);

@@ -58,7 +58,10 @@ class _PosLoginScreenState extends State<PosLoginScreen> {
   }
 
   void _onUpdateChange() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   void _onKeyPress(String val) {
