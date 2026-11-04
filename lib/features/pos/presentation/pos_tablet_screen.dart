@@ -44,6 +44,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
   int? _selectedOrderTypeIdState;
   String _selectedCategory = 'Semua';
   String? _selectedTableNo;
+  String? _customerName;
   int _manualDiscount = 0;
   int? _resumedOrderId;
 
@@ -64,6 +65,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
           'selectedOrderTypeId': _selectedOrderTypeId,
           'manualDiscount': _manualDiscount,
           'resumedOrderId': _resumedOrderId,
+          'customerName': _customerName,
         };
         await prefs.setString(_prefKeyCartDraft, jsonEncode(data));
       }
@@ -89,6 +91,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
             }
             _manualDiscount = (data['manualDiscount'] as num?)?.toInt() ?? 0;
             _resumedOrderId = data['resumedOrderId'] as int?;
+            _customerName = data['customerName'] as String?;
           });
         }
       }
@@ -899,7 +902,60 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
     );
   }
 
-  void _openPayment({bool dismissCurrentModal = false}) {
+  void _promptEditCustomerName({StateSetter? modalSetState}) {
+    final nameCtrl = TextEditingController(text: _customerName ?? '');
+    showCupertinoDialog<void>(
+      context: context,
+      builder: (nCtx) => CupertinoAlertDialog(
+        title: const Text('Nama Customer'),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Masukkan nama customer untuk dicantumkan pada struk dan tiket dapur.'),
+              const SizedBox(height: 10),
+              CupertinoTextField(
+                controller: nameCtrl,
+                autofocus: true,
+                placeholder: 'Nama Customer (wajib)',
+                placeholderStyle: TextStyle(
+                  color: CupertinoColors.placeholderText.resolveFrom(context),
+                  fontSize: 13,
+                ),
+                style: TextStyle(
+                  color: CupertinoColors.label.resolveFrom(context),
+                  fontSize: 14,
+                ),
+                padding: const EdgeInsets.all(10),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(nCtx),
+            child: const Text('Batal'),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () {
+              final name = nameCtrl.text.trim();
+              if (name.isNotEmpty) {
+                setState(() => _customerName = name);
+                if (modalSetState != null) modalSetState(() {});
+                Navigator.pop(nCtx);
+              }
+            },
+            child: const Text('Simpan'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openPayment({bool dismissCurrentModal = false}) async {
     if (!PosSyncService.instance.hasActiveShift) {
       if (dismissCurrentModal) {
         Navigator.pop(context);
@@ -938,6 +994,61 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
     if (dismissCurrentModal) {
       Navigator.pop(context);
     }
+    // Jika nama customer belum diisi, minta terlebih dahulu sebelum bayar
+    if (_customerName == null || _customerName!.isEmpty) {
+      final nameCtrl = TextEditingController();
+      await showCupertinoDialog<void>(
+        context: context,
+        builder: (nCtx) => CupertinoAlertDialog(
+          title: const Text('Nama Customer'),
+          content: Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Masukkan nama customer untuk dicantumkan pada struk dan tiket dapur.'),
+                const SizedBox(height: 10),
+                CupertinoTextField(
+                  controller: nameCtrl,
+                  autofocus: true,
+                  placeholder: 'Nama Customer (wajib)',
+                  placeholderStyle: TextStyle(
+                    color: CupertinoColors.placeholderText.resolveFrom(context),
+                    fontSize: 13,
+                  ),
+                  style: TextStyle(
+                    color: CupertinoColors.label.resolveFrom(context),
+                    fontSize: 14,
+                  ),
+                  padding: const EdgeInsets.all(10),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            CupertinoDialogAction(
+              isDestructiveAction: true,
+              onPressed: () => Navigator.pop(nCtx),
+              child: const Text('Batal'),
+            ),
+            CupertinoDialogAction(
+              isDefaultAction: true,
+              onPressed: () {
+                final name = nameCtrl.text.trim();
+                if (name.isNotEmpty) {
+                  setState(() => _customerName = name);
+                  Navigator.pop(nCtx);
+                }
+              },
+              child: const Text('Lanjut Bayar'),
+            ),
+          ],
+        ),
+      );
+      // If user cancelled or left empty, abort payment
+      if (!mounted) return;
+      if (_customerName == null || _customerName!.isEmpty) return;
+    }
     PosPaymentSheet.show(
       context: context,
       cart: _cart,
@@ -945,6 +1056,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
       orderType: _selectedOrderTypeName,
       orderTypeId: _selectedOrderTypeId,
       tableNo: _selectedTableNo,
+      customerName: _customerName,
       resumedOrderId: _resumedOrderId,
       onPaymentSuccess: () {
         setState(() {
@@ -952,6 +1064,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
           _manualDiscount = 0;
           _selectedTableNo = null;
           _resumedOrderId = null;
+          _customerName = null;
         });
         _clearCartDraft();
       },
@@ -1010,7 +1123,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
       return;
     }
 
-    final refController = TextEditingController(text: _selectedTableNo != null ? 'Meja $_selectedTableNo' : '');
+    final customerNameController = TextEditingController(text: _customerName ?? '');
     final notesController = TextEditingController();
 
     showCupertinoDialog(
@@ -1025,8 +1138,9 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
               const Text('Pesanan akan disimpan dalam status Open Bill (belum bayar) dan tiket pesanan langsung dicetak ke dapur.'),
               const SizedBox(height: 10),
               CupertinoTextField(
-                controller: refController,
-                placeholder: 'Label / Nama Meja / Tamu (cth: Meja 4 / Budi)',
+                controller: customerNameController,
+                placeholder: 'Nama Customer (wajib diisi)',
+                autofocus: true,
                 placeholderStyle: TextStyle(
                   color: CupertinoColors.placeholderText.resolveFrom(context),
                   fontSize: 13,
@@ -1063,7 +1177,29 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
           CupertinoDialogAction(
             isDefaultAction: true,
             onPressed: () async {
+              final enteredName = customerNameController.text.trim();
+              if (enteredName.isEmpty) {
+                // Show validation - name is required
+                showCupertinoDialog(
+                  context: context,
+                  builder: (vCtx) => CupertinoAlertDialog(
+                    title: const Text('Nama Customer Wajib'),
+                    content: const Text('Harap isi nama customer sebelum membuka Open Bill.'),
+                    actions: [
+                      CupertinoDialogAction(
+                        isDefaultAction: true,
+                        onPressed: () => Navigator.pop(vCtx),
+                        child: const Text('OK'),
+                      ),
+                    ],
+                  ),
+                );
+                return;
+              }
               Navigator.pop(ctx);
+
+              // Save customer name to state immediately
+              setState(() => _customerName = enteredName);
 
               final cartSnapshot = List<Map<String, dynamic>>.from(_cart);
               final tableSnapshot = _selectedTableNo;
@@ -1077,9 +1213,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                 'shift_id': PosSyncService.instance.currentShift?['id'],
                 'order_type_id': _selectedOrderTypeId,
                 'table_id': _selectedTableNo != null ? int.tryParse(_selectedTableNo!) : null,
-                'hold_reference': refController.text.trim().isNotEmpty
-                    ? refController.text.trim()
-                    : (_selectedTableNo != null ? 'Meja $_selectedTableNo' : 'Bill ${WibTime.format(now, "HH:mm")}'),
+                'hold_reference': enteredName,
                 'hold_notes': notesController.text.trim(),
                 'manual_discount': _manualDiscount,
                 'total_amount': calcSnapshot.totalAmount,
@@ -1133,6 +1267,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                     transactionTime: now,
                     items: cartSnapshot,
                     targetStation: 'DAPUR',
+                    customerName: enteredName,
                   );
 
                   printFeedback = printRes.success
@@ -1145,6 +1280,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                   _manualDiscount = 0;
                   _selectedTableNo = null;
                   _resumedOrderId = null;
+                  _customerName = null;
                 });
                 _clearCartDraft();
 
@@ -1243,6 +1379,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
       _manualDiscount = 0;
       _selectedTableNo = null;
       _resumedOrderId = null;
+      _customerName = null;
     });
     _clearCartDraft();
 
@@ -1312,6 +1449,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                   _manualDiscount = 0;
                   _selectedTableNo = null;
                   _resumedOrderId = null;
+                  _customerName = null;
                 });
                 _clearCartDraft();
                 if (setModalState != null) setModalState(() {});
@@ -1529,6 +1667,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
         _manualDiscount = (resumedOrder['manual_discount_amount'] as num?)?.toInt() ?? 0;
         _selectedOrderTypeIdState = (resumedOrder['order_type_id'] as num?)?.toInt() ?? _selectedOrderTypeId;
         _selectedTableNo = resumedOrder['table_id']?.toString();
+        _customerName = (resumedOrder['hold_reference'] as String?) ?? (resumedOrder['customer_name'] as String?);
       });
       _saveCartDraft();
       HapticFeedback.mediumImpact();
@@ -3137,6 +3276,7 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
                         _manualDiscount = 0;
                         _selectedTableNo = null;
                         _resumedOrderId = null;
+                        _customerName = null;
                       });
                       _clearCartDraft();
                       if (modalSetState != null) modalSetState(() {});
@@ -3197,6 +3337,50 @@ class _PosTabletScreenState extends State<PosTabletScreen> with WidgetsBindingOb
           _buildOrderTypeSelector(modalSetState: modalSetState),
 
           // Table Selector (dynamically shown when order type requires table)
+          if (_customerName != null && _customerName!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 2, 16, 4),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: IOSColors.accent.resolveFrom(context).withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: IOSColors.accent.resolveFrom(context).withValues(alpha: 0.25),
+                    width: 0.5,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(CupertinoIcons.person_fill, size: 13, color: IOSColors.accent.resolveFrom(context)),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Customer: $_customerName',
+                        style: IOSText.caption1.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: IOSColors.accent.resolveFrom(context),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      minimumSize: Size.zero,
+                      onPressed: () => _promptEditCustomerName(modalSetState: modalSetState),
+                      child: Text(
+                        'Ubah',
+                        style: IOSText.caption2.copyWith(
+                          color: IOSColors.accent.resolveFrom(context),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           AnimatedSize(
             duration: const Duration(milliseconds: 220),
             curve: Curves.easeOutCubic,

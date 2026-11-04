@@ -14,8 +14,8 @@ class AppUpdateService extends ChangeNotifier {
   factory AppUpdateService() => instance;
   AppUpdateService._internal();
 
-  String currentVersion = '1.0.5';
-  String currentBuildNumber = '6';
+  String currentVersion = '1.0.6';
+  String currentBuildNumber = '7';
   bool _initialized = false;
 
   bool isChecking = false;
@@ -219,8 +219,8 @@ class AppUpdateService extends ChangeNotifier {
   void resetForTesting() {
     _otaSubscription?.cancel();
     _initialized = false;
-    currentVersion = '1.0.5';
-    currentBuildNumber = '6';
+    currentVersion = '1.0.6';
+    currentBuildNumber = '7';
     hasUpdate = false;
     latestVersion = null;
     latestBuildNumber = null;

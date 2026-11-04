@@ -24,6 +24,7 @@ class PosPaymentSheet extends StatefulWidget {
     required this.orderTypeId,
     required this.tableNo,
     required this.onPaymentSuccess,
+    this.customerName,
     this.resumedOrderId,
     this.isLocked = false,
   });
@@ -33,6 +34,7 @@ class PosPaymentSheet extends StatefulWidget {
   final String orderType;
   final int orderTypeId;
   final String? tableNo;
+  final String? customerName;
   final VoidCallback onPaymentSuccess;
   final int? resumedOrderId;
   final bool isLocked;
@@ -45,6 +47,7 @@ class PosPaymentSheet extends StatefulWidget {
     required int orderTypeId,
     required String? tableNo,
     required VoidCallback onPaymentSuccess,
+    String? customerName,
     int? resumedOrderId,
     bool isLocked = false,
   }) {
@@ -59,6 +62,7 @@ class PosPaymentSheet extends StatefulWidget {
         orderTypeId: orderTypeId,
         tableNo: tableNo,
         onPaymentSuccess: onPaymentSuccess,
+        customerName: customerName,
         resumedOrderId: resumedOrderId,
         isLocked: isLocked,
       ),
@@ -164,6 +168,8 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
       'user_id': user?['id'] ?? 1,
       'order_type_id': widget.orderTypeId,
       'table_id': widget.tableNo != null ? int.tryParse(widget.tableNo!) : null,
+      'customer_name': widget.customerName,
+      'hold_reference': widget.customerName,
       'resumed_order_id': widget.resumedOrderId,
       'client_created_at': WibTime.toIso8601String(transactionTime),
       'subtotal': calc.subtotal,
@@ -258,6 +264,7 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
           ],
           changeAmount: _changeAmount > 0 ? _changeAmount : 0,
           openDrawer: _isCash,
+          customerName: widget.customerName,
         );
 
         printNotice = printRes.success
@@ -289,6 +296,7 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
           ],
           changeAmount: _changeAmount > 0 ? _changeAmount : 0,
           openDrawer: _isCash,
+          customerName: widget.customerName,
         );
 
         printNotice = printRes.success
@@ -334,6 +342,7 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
         changeAmount: _changeAmount > 0 ? _changeAmount : 0,
         printNotice: printNotice.isNotEmpty ? printNotice : null,
         orderId: orderNo,
+        customerName: widget.customerName,
         onVoid: (pin, reason) async {
           final res = await PosSyncService.instance.voidOrder(orderNo, pin, reason);
           if (res['success'] == true) {
@@ -377,6 +386,7 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
               changeAmount: _changeAmount > 0 ? _changeAmount : 0,
               openDrawer: false,
               isDuplicateCopy: true,
+              customerName: widget.customerName,
             );
           } else {
             await ThermalPrinterService.instance.printOrderDualCopy(
@@ -403,6 +413,7 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
               ],
               changeAmount: _changeAmount > 0 ? _changeAmount : 0,
               openDrawer: false,
+              customerName: widget.customerName,
             );
           }
         },

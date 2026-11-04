@@ -281,6 +281,7 @@ class ThermalPrinterService extends ChangeNotifier {
     required List<Map<String, dynamic>> payments,
     required int changeAmount,
     bool openDrawer = false,
+    String? customerName,
   }) async {
     if (kIsWeb) {
       return const PrinterResult(success: false, message: 'Pencetakan Bluetooth tidak didukung di web.');
@@ -352,6 +353,12 @@ class ThermalPrinterService extends ChangeNotifier {
         bytes.addAll(generator.row([
           PosColumn(text: 'Meja', width: 4),
           PosColumn(text: ': $tableNo', width: 8, styles: const PosStyles(bold: true)),
+        ]));
+      }
+      if (customerName != null && customerName.isNotEmpty) {
+        bytes.addAll(generator.row([
+          PosColumn(text: 'Customer', width: 4),
+          PosColumn(text: ': $customerName', width: 8, styles: const PosStyles(bold: true)),
         ]));
       }
       bytes.addAll(generator.text('--------------------------------', styles: const PosStyles(align: PosAlign.center)));
@@ -469,6 +476,9 @@ class ThermalPrinterService extends ChangeNotifier {
       if (tableNo != null && tableNo.isNotEmpty) {
         bytes.addAll(generator.text('>> MEJA : $tableNo <<', styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size1, width: PosTextSize.size1)));
       }
+      if (customerName != null && customerName.isNotEmpty) {
+        bytes.addAll(generator.text('>> CUSTOMER : $customerName <<', styles: const PosStyles(align: PosAlign.center, bold: true)));
+      }
       bytes.addAll(generator.text('--------------------------------', styles: const PosStyles(align: PosAlign.center)));
 
       for (final item in items) {
@@ -530,6 +540,7 @@ class ThermalPrinterService extends ChangeNotifier {
     required List<Map<String, dynamic>> items,
     String targetStation = 'DAPUR',
     bool isAdditional = false,
+    String? customerName,
   }) async {
     if (kIsWeb) {
       return const PrinterResult(success: false, message: 'Pencetakan Bluetooth tidak didukung di web.');
@@ -576,6 +587,9 @@ class ThermalPrinterService extends ChangeNotifier {
 
       if (tableNo != null && tableNo.isNotEmpty) {
         bytes.addAll(generator.text('>> MEJA : $tableNo <<', styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size1, width: PosTextSize.size1)));
+      }
+      if (customerName != null && customerName.isNotEmpty) {
+        bytes.addAll(generator.text('>> CUSTOMER : $customerName <<', styles: const PosStyles(align: PosAlign.center, bold: true)));
       }
       bytes.addAll(generator.text('--------------------------------', styles: const PosStyles(align: PosAlign.center)));
 
@@ -650,6 +664,7 @@ class ThermalPrinterService extends ChangeNotifier {
     required int changeAmount,
     bool openDrawer = false,
     bool isDuplicateCopy = false,
+    String? customerName,
   }) async {
     if (kIsWeb) {
       return const PrinterResult(success: false, message: 'Pencetakan Bluetooth tidak didukung di web.');
@@ -719,6 +734,12 @@ class ThermalPrinterService extends ChangeNotifier {
         bytes.addAll(generator.row([
           PosColumn(text: 'Meja', width: 4),
           PosColumn(text: ': $tableNo', width: 8, styles: const PosStyles(bold: true)),
+        ]));
+      }
+      if (customerName != null && customerName.isNotEmpty) {
+        bytes.addAll(generator.row([
+          PosColumn(text: 'Customer', width: 4),
+          PosColumn(text: ': $customerName', width: 8, styles: const PosStyles(bold: true)),
         ]));
       }
       bytes.addAll(generator.text('--------------------------------', styles: const PosStyles(align: PosAlign.center)));

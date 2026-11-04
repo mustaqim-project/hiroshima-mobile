@@ -29,6 +29,7 @@ class ReceiptBuilder {
     required List<Map<String, dynamic>> payments,
     required int changeAmount,
     bool isDuplicateCopy = false,
+    String? customerName,
   }) {
     final buffer = StringBuffer();
     final timeStr = WibTime.format(transactionTime, 'dd/MM/yyyy HH:mm');
@@ -61,6 +62,9 @@ class ReceiptBuilder {
     buffer.writeln('Tipe      : $orderTypeName');
     if (tableNo != null && tableNo.isNotEmpty) {
       buffer.writeln('Meja      : $tableNo');
+    }
+    if (customerName != null && customerName.isNotEmpty) {
+      buffer.writeln('Customer  : $customerName');
     }
     buffer.writeln('--------------------------------');
 
@@ -147,6 +151,7 @@ class ReceiptBuilder {
     required List<Map<String, dynamic>> items,
     String targetStation = 'DAPUR', // 'DAPUR' or 'BAR'
     bool isAdditionalItemsOnly = false,
+    String? customerName,
   }) {
     final buffer = StringBuffer();
     final timeStr = WibTime.format(transactionTime, 'HH:mm:ss');
@@ -163,6 +168,9 @@ class ReceiptBuilder {
     buffer.writeln('Tipe  : $orderTypeName');
     if (tableNo != null && tableNo.isNotEmpty) {
       buffer.writeln('MEJA  : >> $tableNo <<');
+    }
+    if (customerName != null && customerName.isNotEmpty) {
+      buffer.writeln('CUSTOMER : >> $customerName <<');
     }
     buffer.writeln('--------------------------------');
 

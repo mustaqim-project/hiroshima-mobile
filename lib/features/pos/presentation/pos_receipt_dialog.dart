@@ -15,6 +15,7 @@ class PosReceiptDialog extends StatelessWidget {
   final String branchPhone;
   final String orderNo;
   final String? tableNo;
+  final String? customerName;
   final String orderTypeName;
   final String cashierName;
   final DateTime transactionTime;
@@ -45,6 +46,7 @@ class PosReceiptDialog extends StatelessWidget {
     required this.tableNo,
     required this.orderTypeName,
     required this.cashierName,
+    this.customerName,
     required this.transactionTime,
     required this.items,
     required this.subtotal,
@@ -234,6 +236,10 @@ class PosReceiptDialog extends StatelessWidget {
                       _buildMetaRow(context, 'Waktu', '${WibTime.format(transactionTime, "dd/MM/yyyy HH:mm")} WIB'),
                       const SizedBox(height: 4),
                       _buildMetaRow(context, 'Kasir', cashierName),
+                      if (customerName != null && customerName!.isNotEmpty) ...[ 
+                        const SizedBox(height: 4),
+                        _buildMetaRow(context, 'Customer', customerName!),
+                      ],
                       const SizedBox(height: 4),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
