@@ -1,4 +1,4 @@
-﻿// @req FR-OFF-01, FR-OFF-02, FR-OFF-03, FR-OFF-04, FR-OFF-05, FR-POS-16, FSD-10
+// @req FR-OFF-01, FR-OFF-02, FR-OFF-03, FR-OFF-04, FR-OFF-05, FR-POS-16, FSD-10
 
 import 'dart:async';
 import 'dart:convert';
@@ -47,6 +47,8 @@ class PosSyncService extends ChangeNotifier {
   static const String _prefKeyHeldOrdersCache = prefKeyHeldOrdersCache;
   static const String prefKeyCurrentShift = 'hiroshima_pos_current_shift_cache_v1';
   static const String _prefKeyCurrentShift = prefKeyCurrentShift;
+  static const String prefKeyOutboxQueue = 'hiroshima_pos_outbox_queue_v2';
+  static const String _prefKeyOutboxQueue = prefKeyOutboxQueue;
 
   /// Official production API base URL on hiroshima.web.id
   static const String productionBaseUrl = 'https://hiroshima.web.id/api/v1';
@@ -199,7 +201,7 @@ class PosSyncService extends ChangeNotifier {
   Future<void> _initAutoSync() async {
     await _loadSavedBaseUrl();
     await _loadSavedAuth();
-    _loadOutboxFromDisk();
+    await _loadOutboxFromDisk();
     await _loadCacheFromDisk();
     await _loadHeldOrdersFromDisk();
     await _loadCurrentShiftFromDisk();
@@ -1580,20 +1582,51 @@ class PosSyncService extends ChangeNotifier {
     }
   }
 
-  /// Load pending outbox items from disk
-  void _loadOutboxFromDisk() {
+  /// Load pending outbox items from SharedPreferences & disk
+  Future<void> _loadOutboxFromDisk() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final content = prefs.getString(_prefKeyOutboxQueue);
+      if (content != null && content.isNotEmpty) {
+        final list = jsonDecode(content) as List<dynamic>;
+        final existingUuids = OutboxManager().allQueueUuids.toSet();
+        for (final item in list) {
+          final map = item as Map<String, dynamic>;
+          final uuid = map['uuid'] as String;
+          if (!existingUuids.contains(uuid)) {
+            OutboxManager().enqueue(OutboxItem(
+              uuid: uuid,
+              orderNo: map['order_no'] as String,
+              clientCreatedAt: DateTime.parse(map['client_created_at'] as String),
+              payload: map['payload'] as Map<String, dynamic>,
+            ));
+            existingUuids.add(uuid);
+          }
+        }
+        notifyListeners();
+        return;
+      }
+    } catch (e) {
+      debugPrint('[PosSyncService] Error reading outbox from SharedPreferences: $e');
+    }
+
     try {
       if (_outboxFile.existsSync()) {
         final content = _outboxFile.readAsStringSync();
         final list = jsonDecode(content) as List<dynamic>;
+        final existingUuids = OutboxManager().allQueueUuids.toSet();
         for (final item in list) {
           final map = item as Map<String, dynamic>;
-          OutboxManager().enqueue(OutboxItem(
-            uuid: map['uuid'] as String,
-            orderNo: map['order_no'] as String,
-            clientCreatedAt: DateTime.parse(map['client_created_at'] as String),
-            payload: map['payload'] as Map<String, dynamic>,
-          ));
+          final uuid = map['uuid'] as String;
+          if (!existingUuids.contains(uuid)) {
+            OutboxManager().enqueue(OutboxItem(
+              uuid: uuid,
+              orderNo: map['order_no'] as String,
+              clientCreatedAt: DateTime.parse(map['client_created_at'] as String),
+              payload: map['payload'] as Map<String, dynamic>,
+            ));
+            existingUuids.add(uuid);
+          }
         }
         notifyListeners();
       }
@@ -1602,14 +1635,21 @@ class PosSyncService extends ChangeNotifier {
     }
   }
 
-  /// Save pending outbox items to disk
-  void _saveOutboxToDisk() {
+  /// Save pending outbox items to SharedPreferences & disk
+  void _saveOutboxToDisk() async {
     try {
       final items = OutboxManager().getPendingItems(limit: 1000);
       final list = items.map((e) => e.toMap()).toList();
-      _outboxFile.writeAsStringSync(jsonEncode(list));
+      final jsonStr = jsonEncode(list);
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefKeyOutboxQueue, jsonStr);
+
+      try {
+        _outboxFile.writeAsStringSync(jsonStr);
+      } catch (_) {}
     } catch (e) {
-      debugPrint('[PosSyncService] Error writing outbox file: $e');
+      debugPrint('[PosSyncService] Error writing outbox: $e');
     }
   }
 
