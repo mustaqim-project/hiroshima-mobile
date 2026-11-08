@@ -710,6 +710,9 @@ class PosSyncService extends ChangeNotifier {
 
     final Map<String, Map<String, dynamic>> menuMap = {};
     final Map<String, int> paymentMap = {};
+    final Map<String, int> tenderedMap = {};
+    final Map<String, int> changeMap = {};
+    final Map<String, int> txCountMap = {};
 
     for (final order in completedOrders) {
       final sub = (order['subtotal'] as num?)?.toInt() ?? (order['total_amount'] as num?)?.toInt() ?? 0;
@@ -745,6 +748,9 @@ class PosSyncService extends ChangeNotifier {
       final payments = (order['payments'] as List<dynamic>?) ?? [];
       if (payments.isEmpty) {
         paymentMap['Tunai'] = (paymentMap['Tunai'] ?? 0) + tot;
+        tenderedMap['Tunai'] = (tenderedMap['Tunai'] ?? 0) + ((order['paid_amount'] as num?)?.toInt() ?? tot);
+        changeMap['Tunai'] = (changeMap['Tunai'] ?? 0) + ((order['change_amount'] as num?)?.toInt() ?? 0);
+        txCountMap['Tunai'] = (txCountMap['Tunai'] ?? 0) + 1;
         totalCashFromSales += tot;
       } else {
         for (final p in payments) {
@@ -753,8 +759,13 @@ class PosSyncService extends ChangeNotifier {
               ?? p['payment_method']?['name'] 
               ?? p['method'] 
               ?? 'Tunai').toString();
-          final amt = (p['amount'] as num?)?.toInt() ?? tot;
+          final pTendered = (p['tendered_amount'] as num?)?.toInt() ?? (p['amount'] as num?)?.toInt() ?? tot;
+          final pChange = (p['change_amount'] as num?)?.toInt() ?? ((order['change_amount'] as num?)?.toInt() ?? 0);
+          final amt = (pTendered > tot && pChange > 0) ? math.max(0, pTendered - pChange) : ((p['amount'] as num?)?.toInt() ?? tot);
           paymentMap[mName] = (paymentMap[mName] ?? 0) + amt;
+          tenderedMap[mName] = (tenderedMap[mName] ?? 0) + pTendered;
+          changeMap[mName] = (changeMap[mName] ?? 0) + pChange;
+          txCountMap[mName] = (txCountMap[mName] ?? 0) + 1;
           final isExplicitCash = p['is_cash'] == true || (p['payment_method'] is Map && p['payment_method']['is_cash'] == true);
           final isExplicitNonCash = p['is_cash'] == false || (p['payment_method'] is Map && p['payment_method']['is_cash'] == false) || mName.toLowerCase().contains('qris');
           final isCash = isExplicitCash || (!isExplicitNonCash && (mName.toLowerCase().contains('tunai') || mName.toLowerCase().contains('cash')));
@@ -776,7 +787,10 @@ class PosSyncService extends ChangeNotifier {
     final paymentsList = paymentMap.entries.map((e) => {
       'name': e.key,
       'payment_method_name': e.key,
+      'tx_count': txCountMap[e.key] ?? 1,
       'total_amount': e.value,
+      'tendered_amount': tenderedMap[e.key] ?? e.value,
+      'change_amount': changeMap[e.key] ?? 0,
     }).toList();
 
     return {
