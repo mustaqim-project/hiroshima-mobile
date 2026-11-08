@@ -218,7 +218,9 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
           'method': _selectedPaymentMethod['name'] ?? (_isCash ? 'Tunai (Cash)' : 'QRIS'),
           'type': _selectedPaymentMethod['type'] ?? (_isCash ? 'cash' : 'qris_static'),
           'is_cash': _isCash,
-          'amount': _isCash ? _cashGiven : calc.totalAmount,
+          'amount': calc.totalAmount,
+          'tendered_amount': _isCash ? _cashGiven : calc.totalAmount,
+          'change_amount': _changeAmount > 0 ? _changeAmount : 0,
           'payment_method': {
             'id': _selectedPaymentMethod['id'] ?? (_isCash ? 1 : 2),
             'name': _selectedPaymentMethod['name'] ?? (_isCash ? 'Tunai (Cash)' : 'QRIS'),
@@ -259,7 +261,9 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
           payments: [
             {
               'method': _selectedPaymentMethod['name'] ?? 'Tunai',
-              'amount': _isCash ? _cashGiven : calc.totalAmount,
+              'amount': calc.totalAmount,
+          'tendered_amount': _isCash ? _cashGiven : calc.totalAmount,
+          'change_amount': _changeAmount > 0 ? _changeAmount : 0,
             }
           ],
           changeAmount: _changeAmount > 0 ? _changeAmount : 0,
@@ -291,7 +295,9 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
           payments: [
             {
               'method': _selectedPaymentMethod['name'] ?? 'Tunai',
-              'amount': _isCash ? _cashGiven : calc.totalAmount,
+              'amount': calc.totalAmount,
+          'tendered_amount': _isCash ? _cashGiven : calc.totalAmount,
+          'change_amount': _changeAmount > 0 ? _changeAmount : 0,
             }
           ],
           changeAmount: _changeAmount > 0 ? _changeAmount : 0,
@@ -380,7 +386,9 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
               payments: [
                 {
                   'method': _selectedPaymentMethod['name'] ?? 'Tunai',
-                  'amount': _isCash ? _cashGiven : calc.totalAmount,
+                  'amount': calc.totalAmount,
+          'tendered_amount': _isCash ? _cashGiven : calc.totalAmount,
+          'change_amount': _changeAmount > 0 ? _changeAmount : 0,
                 }
               ],
               changeAmount: _changeAmount > 0 ? _changeAmount : 0,
@@ -408,7 +416,9 @@ class _PosPaymentSheetState extends State<PosPaymentSheet> {
               payments: [
                 {
                   'method': _selectedPaymentMethod['name'] ?? 'Tunai',
-                  'amount': _isCash ? _cashGiven : calc.totalAmount,
+                  'amount': calc.totalAmount,
+          'tendered_amount': _isCash ? _cashGiven : calc.totalAmount,
+          'change_amount': _changeAmount > 0 ? _changeAmount : 0,
                 }
               ],
               changeAmount: _changeAmount > 0 ? _changeAmount : 0,

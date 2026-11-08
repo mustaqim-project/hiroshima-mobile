@@ -318,7 +318,15 @@ class ReceiptBuilder {
         final pCount = p['tx_count'] ?? 0;
         final pTotal = (p['total_amount'] as num?)?.toInt() ?? 0;
         buffer.writeln('$name (${pCount}x)');
-        buffer.writeln('    Total     : ${_currencyFormat.format(pTotal).padLeft(16)}');
+        final pTendered = (p['tendered_amount'] as num?)?.toInt() ?? pTotal;
+        final pChange = (p['change_amount'] as num?)?.toInt() ?? 0;
+        if (pChange > 0) {
+          buffer.writeln('  Diterima    : ${_currencyFormat.format(pTendered).padLeft(16)}');
+          buffer.writeln('  Kembalian   : -${_currencyFormat.format(pChange).padLeft(15)}');
+          buffer.writeln('  Bersih      : ${_currencyFormat.format(pTotal).padLeft(16)}');
+        } else {
+          buffer.writeln('    Total     : ${_currencyFormat.format(pTotal).padLeft(16)}');
+        }
       }
     }
 

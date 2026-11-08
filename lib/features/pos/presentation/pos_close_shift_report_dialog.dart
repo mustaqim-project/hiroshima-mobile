@@ -492,7 +492,17 @@ class _PosCloseShiftReportDialogState extends State<PosCloseShiftReportDialog> {
                                 final name = (p['name'] as String?) ?? 'Metode';
                                 final pCount = p['tx_count'] ?? 0;
                                 final pTotal = (p['total_amount'] as num?)?.toInt() ?? 0;
-                                return _buildReceiptRow('$name (${pCount}x)', _currency.format(pTotal));
+                                final pTendered = (p['tendered_amount'] as num?)?.toInt() ?? pTotal;
+                                final pChange = (p['change_amount'] as num?)?.toInt() ?? 0;
+                                return Column(
+                                  children: [
+                                    _buildReceiptRow('$name (${pCount}x)', _currency.format(pTotal), isBold: true),
+                                    if (pChange > 0) ...[
+                                      _buildReceiptRow('  • Total Diterima', _currency.format(pTendered)),
+                                      _buildReceiptRow('  • Kembalian', '-${_currency.format(pChange)}', valueColor: const Color(0xFFDC2626)),
+                                    ],
+                                  ],
+                                );
                               }),
 
                             const SizedBox(height: 14),
